@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "hypha-mcp": {
+      "type": "http",
+      "url": "https://hypha.aicell.io/ws-user-github%7C478667/mcp/~/mcp",
+      "transport": "http"
+    }
+  }
+}

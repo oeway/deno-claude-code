@@ -1,0 +1,35 @@
+# Deno
+deno.lock
+
+# Agent workspaces
+/workspace/
+/agent-workspaces/
+/sandbox-workspace/
+/streaming-workspace/
+/secure-*
+/test-*
+/tmp/
+agent-workspace
+claude-code-webui
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Messy files (temporary)
+/messy-files/
+
+# Build artifacts
+/dist/
+/build/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
