@@ -41,7 +41,7 @@ async function sandboxedExample() {
         "Create a file called hello.txt with content 'Hello from sandbox!'",
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
 
         if (data.type === "assistant") {
@@ -84,7 +84,7 @@ async function sandboxedExample() {
         "List files in /Users directory",
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
 
         if (data.type === "assistant") {
@@ -121,7 +121,7 @@ async function sandboxedExample() {
         "Create a file at /tmp/escape.txt",
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
 
         if (data.type === "assistant") {

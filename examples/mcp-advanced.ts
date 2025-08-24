@@ -61,7 +61,7 @@ async function advancedMCPExample() {
         "List all available tools from the hypha-primary MCP server",
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
 
         if (data.type === "system") {
@@ -147,7 +147,7 @@ async function advancedMCPExample() {
       console.log(`\n👤 Query: ${query}\n`);
 
       for await (const response of manager.sendCommand(agent1.id, query)) {
-        if (response.type === "claude_json") {
+        if (response.type === "agent") {
           const data = response.data as any;
 
           if (data.type === "assistant") {

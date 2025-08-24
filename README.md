@@ -45,7 +45,7 @@ const agent = await manager.createAgent({
 
 // Send command and stream responses
 for await (const response of manager.sendCommand(agent.id, "Hello!")) {
-  if (response.type === "claude_json") {
+  if (response.type === "agent") {
     const data = response.data;
     // Handle response
   }
@@ -215,7 +215,7 @@ interface CreateAgentOptions {
 }
 
 interface StreamResponse {
-  type: "claude_json" | "error" | "done" | "aborted"
+  type: "agent" | "error" | "done" | "aborted"
   data?: unknown
   error?: string
 }

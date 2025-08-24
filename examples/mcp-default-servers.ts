@@ -164,7 +164,7 @@ async function defaultMcpServersExample() {
         "List the MCP servers available to you",
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
         if (data.type === "assistant") {
           const content = data.message?.content;

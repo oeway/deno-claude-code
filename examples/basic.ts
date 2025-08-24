@@ -35,7 +35,7 @@ async function basicExample() {
         "Write a haiku about coding",
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
 
         if (data.type === "assistant") {

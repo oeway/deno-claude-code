@@ -50,8 +50,8 @@ export interface AgentConfig {
  */
 export interface StreamResponse {
   /** Type of response */
-  type: "claude_json" | "error" | "done" | "aborted";
-  /** Data payload for claude_json type */
+  type: "agent" | "error" | "done" | "aborted";
+  /** Data payload for agent type */
   data?: unknown;
   /** Error message for error type */
   error?: string;

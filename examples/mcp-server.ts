@@ -56,7 +56,7 @@ async function mcpServerExample() {
        What capabilities does the hypha-mcp server provide?`,
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
 
         if (data.type === "assistant") {
@@ -100,7 +100,7 @@ async function mcpServerExample() {
        Demonstrate one of its most useful capabilities.`,
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
 
         // Capture session for continuity
@@ -158,7 +158,7 @@ async function mcpServerExample() {
           sessionId, // Maintain session context
         )
       ) {
-        if (response.type === "claude_json") {
+        if (response.type === "agent") {
           const data = response.data as any;
 
           if (data.type === "assistant") {

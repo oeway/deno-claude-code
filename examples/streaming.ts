@@ -60,7 +60,7 @@ async function streamingExample() {
         "What is TypeScript and why is it useful?",
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
 
         // Capture session ID for conversation continuity
@@ -98,7 +98,7 @@ async function streamingExample() {
           sessionId, // Use same session for context
         )
       ) {
-        if (response.type === "claude_json") {
+        if (response.type === "agent") {
           const data = response.data as any;
 
           if (data.type === "assistant") {
@@ -120,7 +120,7 @@ async function streamingExample() {
         sessionId,
       )
     ) {
-      if (response.type === "claude_json") {
+      if (response.type === "agent") {
         const data = response.data as any;
 
         if (data.type === "assistant") {

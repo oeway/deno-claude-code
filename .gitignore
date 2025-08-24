@@ -2,6 +2,7 @@
 deno.lock
 
 # Agent workspaces
+examples/web-ui/agent-workspaces/
 /workspace/
 /agent-workspaces/
 /sandbox-workspace/
