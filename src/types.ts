@@ -35,6 +35,10 @@ export interface MCPServerConfig {
 export interface AgentConfig {
   /** Unique identifier for the agent */
   id?: string;
+  /** Human-readable name for the agent */
+  name?: string;
+  /** Description of the agent's purpose */
+  description?: string;
   /** Working directory for the agent */
   workingDirectory: string;
   /** Permission mode for tool usage */
@@ -43,6 +47,8 @@ export interface AgentConfig {
   allowedTools?: string[];
   /** MCP servers configuration */
   mcpServers?: MCPServerConfig[];
+  /** Settings template for claude.json */
+  settingsTemplate?: Record<string, any>;
 }
 
 /**
@@ -50,17 +56,58 @@ export interface AgentConfig {
  */
 export interface StreamResponse {
   /** Type of response */
-  type: "agent" | "error" | "done" | "aborted";
+  type: "agent" | "error" | "done" | "aborted" | "permission_request";
   /** Data payload for agent type */
   data?: unknown;
   /** Error message for error type */
   error?: string;
+  /** Permission request data */
+  permissionRequest?: PermissionRequest;
 }
+
+/**
+ * Permission request from Claude
+ */
+export interface PermissionRequest {
+  /** Unique ID for this permission request */
+  id: string;
+  /** Tool name requesting permission */
+  toolName: string;
+  /** Patterns or commands being requested */
+  patterns: string[];
+  /** Tool use ID from Claude */
+  toolUseId?: string;
+  /** Additional context about what the tool wants to do */
+  description?: string;
+}
+
+/**
+ * User's response to a permission request
+ */
+export interface PermissionResponse {
+  /** ID of the permission request being responded to */
+  requestId: string;
+  /** User's decision */
+  action: "allow" | "allow_permanent" | "deny";
+  /** Updated list of allowed tools if permanent */
+  allowedTools?: string[];
+}
+
+/**
+ * Callback for handling permission requests
+ */
+export type PermissionCallback = (
+  request: PermissionRequest
+) => Promise<PermissionResponse>;
 
 /**
  * Options for creating a new agent
  */
 export interface CreateAgentOptions {
+  /** Human-readable name for the agent */
+  name?: string;
+  /** Description of the agent's purpose */
+  description?: string;
   /** Working directory for the agent */
   workingDirectory?: string;
   /** Permission mode for tool usage */
@@ -69,6 +116,8 @@ export interface CreateAgentOptions {
   allowedTools?: string[];
   /** MCP servers configuration */
   mcpServers?: MCPServerConfig[];
+  /** Settings template for claude.json */
+  settingsTemplate?: Record<string, any>;
 }
 
 /**
@@ -77,6 +126,10 @@ export interface CreateAgentOptions {
 export interface AgentInfo {
   /** Unique agent ID */
   id: string;
+  /** Human-readable name */
+  name?: string;
+  /** Description */
+  description?: string;
   /** Agent's working directory */
   workingDirectory: string;
   /** Permission mode */

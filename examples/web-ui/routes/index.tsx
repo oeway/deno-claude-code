@@ -108,22 +108,98 @@ export default function Home() {
         </div>
 
         {/* Config Modal */}
-        <div id="configModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
-          <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
+        <div id="configModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
+          <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div class="flex items-center justify-between mb-6">
               <h3 class="text-xl font-semibold text-gray-800">Agent Configuration</h3>
               <button id="closeModalBtn" class="p-1 hover:bg-gray-100 rounded-lg transition-colors">×</button>
             </div>
             
-            <div class="space-y-4">
+            <div class="space-y-5 max-h-[600px] overflow-y-auto pr-2">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Working Directory</label>
+                <label class="block text-base font-medium text-gray-700 mb-2">Agent Name</label>
+                <input 
+                  type="text" 
+                  id="configName" 
+                  placeholder="My Agent"
+                  class="w-full border border-gray-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label class="block text-base font-medium text-gray-700 mb-2">Description</label>
+                <textarea 
+                  id="configDescription" 
+                  rows={3}
+                  placeholder="What does this agent do?"
+                  class="w-full border border-gray-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                ></textarea>
+              </div>
+              
+              <div>
+                <label class="block text-base font-medium text-gray-700 mb-2">Working Directory</label>
                 <input 
                   type="text" 
                   id="configWorkDir" 
                   value="./agent-workspaces" 
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  class="w-full border border-gray-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              
+              <div>
+                <label class="block text-base font-medium text-gray-700 mb-2">Permission Mode</label>
+                <select 
+                  id="configPermMode" 
+                  class="w-full border border-gray-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="default">Default</option>
+                  <option value="acceptEdits">Accept Edits</option>
+                  <option value="bypassPermissions">Bypass Permissions</option>
+                  <option value="plan">Plan Mode</option>
+                </select>
+              </div>
+              
+              <div>
+                <label class="block text-base font-medium text-gray-700 mb-2">
+                  MCP Servers Configuration
+                  <span class="text-sm text-gray-500 ml-2">Model Context Protocol servers</span>
+                </label>
+                <textarea 
+                  id="configMcpServers" 
+                  rows={8} 
+                  placeholder={`{
+  "filesystem": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+    "env": {
+      "ALLOWED_DIRECTORIES": "/tmp,/home/user/projects"
+    }
+  }
+}`}
+                  class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm leading-relaxed"
+                  value={`{}`}
+                ></textarea>
+              </div>
+              
+              <div>
+                <label class="block text-base font-medium text-gray-700 mb-2">
+                  Advanced Configuration
+                  <span class="text-sm text-gray-500 ml-2">Allowed tools and settings template</span>
+                </label>
+                <textarea 
+                  id="configAdvanced" 
+                  rows={6} 
+                  placeholder={`{
+  "allowedTools": ["Read", "Write", "Edit", "Bash"],
+  "settingsTemplate": {}
+}`}
+                  class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm leading-relaxed"
+                  value={`{
+  "allowedTools": [],
+  "settingsTemplate": {}
+}`}
+                ></textarea>
               </div>
             </div>
             

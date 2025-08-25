@@ -45,6 +45,11 @@ let agentList, agentName, agentStatus, messages, messageInput;
 let sendButton, stopButton, configModal, newAgentBtn;
 let closeModalBtn, cancelBtn, createBtn;
 
+// Track tool calls for result matching
+let pendingToolCalls = new Map();
+// Track recent tool uses for permission detection
+let recentToolUses = new Map();
+
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize DOM elements
@@ -112,9 +117,11 @@ function renderAgentList() {
   } else {
     agentList.innerHTML = agents.map(agent => {
       const bgClass = currentAgentId === agent.id ? 'bg-blue-50 border-2 border-blue-400' : 'bg-white border border-gray-200';
+      const displayName = agent.name || `Agent ${agent.id.split('-')[0]}`;
       return `<div class="agent-card p-4 rounded-lg cursor-pointer ${bgClass} hover:shadow-md transition-all" data-id="${agent.id}">
-        <div class="font-semibold text-gray-500">Agent ${agent.id.split('-')[0]}</div>
-        <div class="text-xs text-gray-500">${agent.workingDirectory}</div>
+        <div class="font-semibold text-gray-700">${escapeHtml(displayName)}</div>
+        ${agent.description ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(agent.description)}</div>` : ''}
+        <div class="text-xs text-gray-500 mt-2">${agent.workingDirectory}</div>
         <button class="delete-agent mt-2 text-xs text-red-600 hover:text-red-800" data-id="${agent.id}">Delete</button>
       </div>`;
     }).join('');
@@ -140,6 +147,8 @@ function renderAgentList() {
 
 async function selectAgent(id) {
   currentAgentId = id;
+  currentSessionId = null; // Reset session when switching agents
+  sessionAllowedTools = []; // Reset allowed tools when switching agents
   const agent = agents.find(a => a.id === id);
   
   if (!agent) {
@@ -147,7 +156,8 @@ async function selectAgent(id) {
     return;
   }
   
-  if (agentName) agentName.textContent = `Agent ${id.split('-')[0]}`;
+  const displayName = agent.name || `Agent ${id.split('-')[0]}`;
+  if (agentName) agentName.textContent = displayName;
   if (agentStatus) agentStatus.textContent = 'Ready to chat';
   
   // Try to restore conversation history
@@ -227,6 +237,10 @@ async function selectAgent(id) {
                     if (Array.isArray(claudeData.content)) {
                       for (const item of claudeData.content) {
                         if (item.type === 'tool_use') {
+                          // Cache tool use for permission detection
+                          if (item.id) {
+                            recentToolUses.set(item.id, item);
+                          }
                           addRichMessage(renderToolUse(item));
                         }
                       }
@@ -235,6 +249,10 @@ async function selectAgent(id) {
                   break;
                   
                 case 'tool_use':
+                  // Cache tool use for permission detection
+                  if (claudeData.id) {
+                    recentToolUses.set(claudeData.id, claudeData);
+                  }
                   addRichMessage(renderToolUse(claudeData));
                   break;
                   
@@ -322,7 +340,27 @@ async function deleteAgent(id) {
 }
 
 function showConfigModal() {
-  if (configModal) configModal.classList.remove('hidden');
+  // Ensure configModal is available
+  const modal = configModal || document.getElementById('configModal');
+  if (modal) modal.classList.remove('hidden');
+  
+  // Reset form fields to defaults
+  const nameEl = document.getElementById('configName');
+  const descEl = document.getElementById('configDescription');
+  const workDirEl = document.getElementById('configWorkDir');
+  const permModeEl = document.getElementById('configPermMode');
+  const mcpServersEl = document.getElementById('configMcpServers');
+  const advancedEl = document.getElementById('configAdvanced');
+  
+  if (nameEl) nameEl.value = '';
+  if (descEl) descEl.value = '';
+  if (workDirEl) workDirEl.value = './agent-workspaces';
+  if (permModeEl) permModeEl.value = 'default';
+  if (mcpServersEl) mcpServersEl.value = '{}';
+  if (advancedEl) advancedEl.value = `{
+  "allowedTools": [],
+  "settingsTemplate": {}
+}`;
 }
 
 function closeConfigModal() {
@@ -331,8 +369,53 @@ function closeConfigModal() {
 
 async function createAgent() {
   try {
+    // Get element values
+    const name = document.getElementById('configName').value;
+    const description = document.getElementById('configDescription').value;
     const workDir = document.getElementById('configWorkDir').value || '/tmp/agent-' + Date.now();
-    const config = { workingDirectory: workDir };
+    const permMode = document.getElementById('configPermMode').value || 'default';
+    const mcpServersText = document.getElementById('configMcpServers').value;
+    const advancedConfigText = document.getElementById('configAdvanced').value;
+    
+    // Parse MCP servers config (object format)
+    let mcpServersObj = {};
+    try {
+      if (mcpServersText.trim()) {
+        mcpServersObj = JSON.parse(mcpServersText);
+      }
+    } catch (e) {
+      alert('Invalid JSON in MCP Servers Configuration field');
+      return;
+    }
+    
+    // Convert MCP servers object to array format for internal use
+    const mcpServers = [];
+    for (const [serverName, serverConfig] of Object.entries(mcpServersObj)) {
+      mcpServers.push({
+        name: serverName,
+        ...serverConfig
+      });
+    }
+    
+    // Parse advanced config
+    let advancedConfig = {};
+    try {
+      if (advancedConfigText.trim()) {
+        advancedConfig = JSON.parse(advancedConfigText);
+      }
+    } catch (e) {
+      alert('Invalid JSON in Advanced Configuration field');
+      return;
+    }
+    
+    const config = {
+      name: name || undefined,
+      description: description || undefined,
+      workingDirectory: workDir,
+      permissionMode: permMode,
+      mcpServers: mcpServers.length > 0 ? mcpServers : undefined,
+      ...advancedConfig
+    };
     
     console.log('Creating agent with config:', config);
     
@@ -408,6 +491,7 @@ function renderToolUse(data) {
   const toolName = data.tool_name || data.name || 'Unknown Tool';
   const toolIcon = getToolIcon(toolName);
   const isMcp = toolName.includes('mcp__');
+  const toolUseId = data.tool_use_id || data.id;
   
   // Special rendering for TodoWrite tool
   if (toolName === 'TodoWrite' && data.input?.todos) {
@@ -423,7 +507,7 @@ function renderToolUse(data) {
             <div class="flex items-center space-x-2 mb-3">
               <span class="text-sm font-bold text-blue-900">Tool Call:</span>
               <code class="font-mono text-xs bg-white px-2 py-1 rounded border">TodoWrite</code>
-              ${data.tool_use_id ? `<span class="text-xs text-gray-500">#${data.tool_use_id.substring(0, 8)}</span>` : ''}
+              ${toolUseId ? `<span class="text-xs text-gray-500">#${toolUseId.substring(0, 8)}</span>` : ''}
             </div>
             <div class="bg-white rounded-lg p-3 border border-gray-200">
               <div class="text-xs font-semibold text-gray-700 mb-2">Todo List Update:</div>
@@ -530,7 +614,7 @@ function renderToolUse(data) {
             <div class="flex items-center space-x-2 mb-3">
               <span class="text-sm font-bold text-green-900">Tool Call:</span>
               <code class="font-mono text-xs bg-white px-2 py-1 rounded border">Write</code>
-              ${data.tool_use_id ? `<span class="text-xs text-gray-500">#${data.tool_use_id.substring(0, 8)}</span>` : ''}
+              ${toolUseId ? `<span class="text-xs text-gray-500">#${toolUseId.substring(0, 8)}</span>` : ''}
             </div>
             <div class="bg-gray-900 rounded-lg overflow-hidden border border-gray-700 relative">
               <div class="bg-gray-800 px-3 py-2 flex items-center justify-between border-b border-gray-700">
@@ -574,8 +658,8 @@ function renderToolUse(data) {
     `;
   }
   
-  return `
-    <div class="bg-gradient-to-r ${isMcp ? 'from-purple-50 to-indigo-50 border-purple-300' : 'from-blue-50 to-cyan-50 border-blue-300'} rounded-lg p-4 border-2 shadow-sm">
+  const html = `
+    <div class="bg-gradient-to-r ${isMcp ? 'from-purple-50 to-indigo-50 border-purple-300' : 'from-blue-50 to-cyan-50 border-blue-300'} rounded-lg p-4 border-2 shadow-sm" ${toolUseId ? `id="tool-use-${toolUseId}"` : ''}>
       <div class="flex items-start space-x-3">
         <div class="flex-shrink-0">
           <div class="w-10 h-10 ${isMcp ? 'bg-purple-100' : 'bg-blue-100'} rounded-full flex items-center justify-center text-lg">
@@ -586,7 +670,7 @@ function renderToolUse(data) {
           <div class="flex items-center space-x-2 mb-2">
             <span class="text-sm font-bold ${isMcp ? 'text-purple-900' : 'text-blue-900'}">Tool Call:</span>
             <code class="font-mono text-xs bg-white px-2 py-1 rounded border">${escapeHtml(toolName)}</code>
-            ${data.tool_use_id ? `<span class="text-xs text-gray-500">#${data.tool_use_id.substring(0, 8)}</span>` : ''}
+            ${toolUseId ? `<span class="text-xs text-gray-500">#${toolUseId.substring(0, 8)}</span>` : ''}
           </div>
           ${data.input ? `
             <details class="group" open>
@@ -596,22 +680,32 @@ function renderToolUse(data) {
               <pre class="text-xs mt-2 bg-white p-3 rounded border border-gray-200 overflow-x-auto"><code>${escapeHtml(JSON.stringify(data.input, null, 2))}</code></pre>
             </details>
           ` : '<div class="text-xs text-gray-500">No parameters</div>'}
+          <div id="tool-result-${toolUseId}" class="tool-result-container"></div>
         </div>
       </div>
     </div>
   `;
+  
+  // Track this tool call for result matching and permission detection
+  if (toolUseId) {
+    pendingToolCalls.set(toolUseId, toolName);
+    recentToolUses.set(toolUseId, data);
+  }
+  
+  return html;
 }
 
-function renderToolResult(data) {
+function renderToolResult(data, isAttached = false) {
   const isError = data.is_error || false;
   const output = data.output || data.content || '';
+  const toolUseId = data.tool_use_id;
   
   // Truncate very long outputs
   const displayOutput = output.length > 1000 ? output.substring(0, 1000) + '...\n[Output truncated]' : output;
   
-  return `
-    <div class="${isError ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'} rounded-lg p-3 border shadow-sm">
-      <div class="flex items-start space-x-2">
+  const resultHtml = `
+    <div class="${isError ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'} rounded-lg ${isAttached ? 'mt-3' : 'p-3'} border shadow-sm">
+      <div class="flex items-start space-x-2 ${isAttached ? 'p-3' : ''}">
         <div class="flex-shrink-0">
           <div class="w-6 h-6 ${isError ? 'bg-red-100' : 'bg-green-100'} rounded-full flex items-center justify-center">
             <span class="text-sm">${isError ? '❌' : '✅'}</span>
@@ -631,6 +725,20 @@ function renderToolResult(data) {
       </div>
     </div>
   `;
+  
+  // If we have a tool_use_id, try to attach it to the corresponding tool call
+  if (toolUseId && !isAttached) {
+    // Try to find the tool call container
+    const resultContainer = document.getElementById(`tool-result-${toolUseId}`);
+    if (resultContainer) {
+      resultContainer.innerHTML = renderToolResult(data, true);
+      // Remove from pending
+      pendingToolCalls.delete(toolUseId);
+      return ''; // Return empty string since we attached it
+    }
+  }
+  
+  return resultHtml;
 }
 
 function renderTodos(todos) {
@@ -906,6 +1014,416 @@ function createSpinner() {
   `;
 }
 
+// Global variable to track current permission request
+let currentPermissionRequest = null;
+
+// Helper function to find the last tool use by ID
+function findLastToolUse(toolUseId) {
+  return recentToolUses.get(toolUseId);
+}
+
+// Extract permission patterns from tool data
+function extractPatternsFromTool(toolData) {
+  const patterns = [];
+  const toolName = toolData.name || toolData.tool_name || 'Unknown';
+  
+  if (toolName === 'Bash' && toolData.input?.command) {
+    // Extract command name from bash command
+    const command = toolData.input.command;
+    const baseCommand = command.split(/[;&|]|&&|\|\|/)[0].trim().split(' ')[0];
+    patterns.push(`Bash(${baseCommand}:*)`);
+  } else if (toolName === 'Write' || toolName === 'Edit') {
+    // For file operations, use the tool name
+    patterns.push(toolName);
+  } else {
+    // Default pattern
+    patterns.push(toolName);
+  }
+  
+  return patterns;
+}
+
+// Show permission panel function
+function showPermissionPanel(permissionRequest) {
+  currentPermissionRequest = permissionRequest;
+  
+  // Show permission panel floating above input box
+  const inputContainer = document.querySelector('.bg-white.border-t');
+  if (inputContainer) {
+    // Make the container relative positioned for absolute child
+    inputContainer.style.position = 'relative';
+    
+    // Add permission panel
+    const panelHtml = renderPermissionPanel(permissionRequest);
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = panelHtml;
+    const panelElement = tempDiv.firstElementChild;
+    inputContainer.appendChild(panelElement);
+    
+    // Disable input while waiting for permission response
+    if (messageInput) messageInput.disabled = true;
+    
+    // Focus first button for keyboard navigation
+    setTimeout(() => {
+      const firstButton = panelElement.querySelector('button');
+      if (firstButton) firstButton.focus();
+    }, 100);
+  }
+}
+
+function renderPermissionPanel(request) {
+  const { id, toolName, patterns, description } = request;
+  
+  // Extract command name from patterns like "Bash(ls:*)" -> "ls"
+  function extractCommandName(pattern) {
+    if (!pattern) return "Unknown";
+    const match = pattern.match(/Bash\(([^:]+):/);
+    return match ? match[1] : pattern;
+  }
+  
+  const isMultipleCommands = patterns.length > 1;
+  const commandNames = patterns.map(extractCommandName);
+  
+  return `
+    <div id="permission-panel-${id}" class="absolute bottom-full left-0 right-0 mb-2 mx-4 bg-white border-2 border-amber-300 rounded-xl shadow-lg p-4 animate-fade-in">
+      <!-- Header -->
+      <div class="flex items-center gap-3 mb-3">
+        <div class="p-2 bg-amber-100 rounded-lg">
+          <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+          </svg>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-800">Permission Required</h3>
+      </div>
+      
+      <!-- Content -->
+      <div class="mb-4">
+        ${isMultipleCommands ? `
+          <p class="text-gray-600 mb-2">Claude wants to use the following commands:</p>
+          <div class="flex flex-wrap gap-2 mb-3">
+            ${commandNames.map(cmd => `
+              <span class="font-mono bg-gray-100 px-2 py-1 rounded text-sm">${escapeHtml(cmd)}</span>
+            `).join('')}
+          </div>
+        ` : `
+          <p class="text-gray-600 mb-3">
+            Claude wants to use the 
+            <span class="font-mono bg-gray-100 px-2 py-1 rounded text-sm">${escapeHtml(commandNames[0])}</span>
+            command.
+          </p>
+        `}
+        ${description ? `<p class="text-sm text-gray-500 mb-2">${escapeHtml(description)}</p>` : ''}
+        <p class="text-sm text-gray-500">Do you want to proceed? (Press ESC to deny)</p>
+      </div>
+      
+      <!-- Options -->
+      <div class="space-y-2">
+        <button 
+          onclick="handlePermissionResponse('${id}', 'allow')"
+          class="w-full p-3 rounded-lg text-left transition-all duration-200 hover:bg-blue-50 border-2 border-transparent hover:border-blue-400 focus:bg-blue-50 focus:border-blue-400 focus:outline-none"
+        >
+          <span class="text-sm font-medium text-gray-700">Yes, allow this time</span>
+        </button>
+        
+        <button 
+          onclick="handlePermissionResponse('${id}', 'allow_permanent')"
+          class="w-full p-3 rounded-lg text-left transition-all duration-200 hover:bg-green-50 border-2 border-transparent hover:border-green-400 focus:bg-green-50 focus:border-green-400 focus:outline-none"
+        >
+          <span class="text-sm font-medium text-gray-700">
+            ${isMultipleCommands 
+              ? `Yes, and don't ask again for ${commandNames.join(' and ')} commands`
+              : `Yes, and don't ask again for ${commandNames[0]} command`
+            }
+          </span>
+        </button>
+        
+        <button 
+          onclick="handlePermissionResponse('${id}', 'deny')"
+          class="w-full p-3 rounded-lg text-left transition-all duration-200 hover:bg-gray-50 border-2 border-transparent hover:border-gray-400 focus:bg-gray-50 focus:border-gray-400 focus:outline-none"
+        >
+          <span class="text-sm font-medium text-gray-700">No, deny this request</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// Track allowed tools for the session
+let sessionAllowedTools = [];
+
+// Track current session ID
+let currentSessionId = null;
+
+// Track the last user message for retrying after permission grant
+let lastUserMessage = null;
+
+// Helper function to process stream data (extracted for reuse)
+function processStreamMessage(data, assistantMessageRef) {
+  if (data.type === 'agent') {
+    const claudeData = data.data;
+    
+    // Track session ID from any message that has it
+    if (claudeData.session_id) {
+      currentSessionId = claudeData.session_id;
+    }
+    
+    switch (claudeData.type) {
+      case 'system':
+        if (claudeData.subtype === 'init') {
+          // Skip init during continuation
+          if (!assistantMessageRef.skipInit) {
+            addRichMessage(renderSystemInit(claudeData));
+          }
+        } else {
+          addRichMessage(renderSystemMessage(claudeData));
+        }
+        break;
+        
+      case 'assistant':
+        // Handle assistant messages (same logic as main handler)
+        if (claudeData.message?.content) {
+          if (Array.isArray(claudeData.message.content)) {
+            for (const contentItem of claudeData.message.content) {
+              if (contentItem.type === 'text' && contentItem.text) {
+                if (!assistantMessageRef.current) {
+                  assistantMessageRef.current = addMessage('assistant', contentItem.text);
+                } else {
+                  updateMessage(assistantMessageRef.current, contentItem.text);
+                }
+              } else if (contentItem.type === 'tool_use') {
+                if (contentItem.id) {
+                  recentToolUses.set(contentItem.id, contentItem);
+                }
+                addRichMessage(renderToolUse(contentItem));
+              }
+            }
+          }
+        }
+        break;
+        
+      case 'tool_use':
+        if (claudeData.id) {
+          recentToolUses.set(claudeData.id, claudeData);
+        }
+        addRichMessage(renderToolUse(claudeData));
+        break;
+        
+      case 'tool_result':
+        addRichMessage(renderToolResult(claudeData));
+        break;
+        
+      case 'user':
+        // Check for permission errors
+        let hasPermissionError = false;
+        let content = claudeData.message?.content || claudeData.content;
+        
+        if (content && Array.isArray(content)) {
+          for (const item of content) {
+            if (item.type === 'tool_result' && item.is_error) {
+              const errorContent = item.content || '';
+              if (errorContent.includes('requested permissions') || 
+                  errorContent.includes('permission to') ||
+                  errorContent.includes("haven't granted")) {
+                hasPermissionError = true;
+                const lastToolUse = findLastToolUse(item.tool_use_id);
+                if (lastToolUse) {
+                  const permissionRequest = {
+                    id: globalThis.crypto.randomUUID(),
+                    toolName: lastToolUse.name || 'Unknown Tool',
+                    patterns: extractPatternsFromTool(lastToolUse),
+                    toolUseId: item.tool_use_id,
+                    description: errorContent
+                  };
+                  showPermissionPanel(permissionRequest);
+                  return 'abort'; // Signal to abort processing
+                }
+                break;
+              }
+            }
+          }
+        }
+        
+        if (!hasPermissionError) {
+          addRichMessage(renderUserToolResult(claudeData));
+        }
+        break;
+        
+      case 'todos':
+        if (claudeData.todos) {
+          addRichMessage(renderTodos(claudeData.todos));
+        }
+        break;
+        
+      case 'result':
+        addRichMessage(renderResult(claudeData));
+        break;
+        
+      default:
+        if (claudeData.type) {
+          addRichMessage(renderSystemMessage(claudeData));
+        }
+    }
+  }
+  return 'continue';
+}
+
+// Handle permission response
+window.handlePermissionResponse = async function(requestId, action) {
+  // Remove the permission panel
+  const panel = document.getElementById(`permission-panel-${requestId}`);
+  if (panel) {
+    panel.remove();
+  }
+  
+  // Re-enable input
+  if (messageInput) messageInput.disabled = false;
+  
+  // Handle the action
+  if (!currentPermissionRequest) return;
+  
+  if (action === 'allow' || action === 'allow_permanent') {
+    // Add patterns to allowed tools
+    const patterns = currentPermissionRequest.patterns || [];
+    
+    if (action === 'allow_permanent') {
+      // Add to session allowed tools
+      patterns.forEach(pattern => {
+        if (!sessionAllowedTools.includes(pattern)) {
+          sessionAllowedTools.push(pattern);
+        }
+      });
+    }
+    
+    // Create temporary allowed tools list for this request
+    const tempAllowedTools = [...sessionAllowedTools, ...patterns];
+    
+    // Clear current permission request
+    currentPermissionRequest = null;
+    
+    // Send message to retry the operation with granted permissions
+    if (currentAgentId && currentSessionId) {
+      // Tell Claude to retry the operation now that permissions are granted
+      const retryMessage = `Permission granted for ${patterns.join(', ')}. Please retry the operation.`;
+      
+      // Add the retry message to the chat UI so we can see it
+      addMessage('user', retryMessage);
+      
+      console.log('Sending retry message:', retryMessage);
+      console.log('With allowed tools:', tempAllowedTools);
+      console.log('Session ID:', currentSessionId);
+      
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          agentId: currentAgentId,
+          message: retryMessage,
+          sessionId: currentSessionId,
+          allowedTools: tempAllowedTools
+        })
+      });
+      
+      console.log('Response status:', response.status, response.ok);
+      
+      if (response.ok && response.body) {
+        isExecuting = true;
+        if (sendButton) sendButton.classList.add('hidden');
+        if (stopButton) stopButton.classList.remove('hidden');
+        if (agentStatus) agentStatus.textContent = 'Continuing...';
+        
+        const reader = response.body.getReader();
+        currentReader = reader;
+        const decoder = new TextDecoder();
+        
+        // Continue processing the stream
+        let assistantMessage = null;
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n').filter(line => line.trim());
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                // Process the continuing stream data
+                if (data.type === 'agent') {
+                  const claudeData = data.data;
+                  
+                  // Process messages as before (using the same switch statement logic)
+                  // But skip system init messages since we're continuing
+                  if (claudeData.type === 'system' && claudeData.subtype === 'init') {
+                    // Skip init messages when continuing
+                    continue;
+                  }
+                  
+                  // Process other message types normally
+                  const assistantMessageRef = { current: assistantMessage, skipInit: true };
+                  const result = processStreamMessage(data, assistantMessageRef);
+                  assistantMessage = assistantMessageRef.current;
+                  
+                  if (result === 'abort') {
+                    // Permission error detected, abort the stream
+                    break;
+                  }
+                } else if (data.type === 'done') {
+                  break;
+                }
+              } catch (e) {
+                console.error('Failed to parse continuation data:', e);
+              }
+            }
+          }
+        }
+        
+        isExecuting = false;
+        currentReader = null;
+        if (stopButton) stopButton.classList.add('hidden');
+        if (sendButton) sendButton.classList.remove('hidden');
+        if (agentStatus) agentStatus.textContent = 'Ready to chat';
+      } else {
+        console.error('Failed to send retry message:', response.status);
+      }
+    } else {
+      console.error('Missing agentId or sessionId:', currentAgentId, currentSessionId);
+    }
+  } else {
+    // Deny - just clear the request
+    currentPermissionRequest = null;
+  }
+};
+
+// Add keyboard navigation for permission panel
+document.addEventListener('keydown', (e) => {
+  if (currentPermissionRequest) {
+    const panel = document.getElementById(`permission-panel-${currentPermissionRequest.id}`);
+    if (!panel) return;
+    
+    const buttons = panel.querySelectorAll('button');
+    const focusedButton = document.activeElement;
+    const currentIndex = Array.from(buttons).indexOf(focusedButton);
+    
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const nextIndex = (currentIndex + 1) % buttons.length;
+      buttons[nextIndex].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prevIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+      buttons[prevIndex].focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handlePermissionResponse(currentPermissionRequest.id, 'deny');
+    } else if (e.key === 'Enter' && focusedButton && focusedButton.tagName === 'BUTTON') {
+      // Enter will naturally click the focused button
+    }
+  }
+});
+
 async function sendMessage() {
   if (!currentAgentId) {
     alert('Please select or create an agent first');
@@ -915,6 +1433,7 @@ async function sendMessage() {
   if (!messageInput || !messageInput.value.trim() || isExecuting) return;
   
   const message = messageInput.value.trim();
+  lastUserMessage = message; // Store for potential retry after permission grant
   messageInput.value = '';
   isExecuting = true;
   
@@ -952,7 +1471,11 @@ async function sendMessage() {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agentId: currentAgentId, message })
+      body: JSON.stringify({ 
+        agentId: currentAgentId, 
+        message,
+        allowedTools: sessionAllowedTools.length > 0 ? sessionAllowedTools : undefined
+      })
     });
     
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -985,8 +1508,41 @@ async function sendMessage() {
             
             if (data.type === 'error') {
               addRichMessage(renderError(data));
+            } else if (data.type === 'permission_request') {
+              // Handle permission request
+              console.log('Permission request received:', data.permissionRequest);
+              currentPermissionRequest = data.permissionRequest;
+              
+              // Show permission panel floating above input box
+              const inputContainer = document.querySelector('.bg-white.border-t');
+              if (inputContainer) {
+                // Make the container relative positioned for absolute child
+                inputContainer.style.position = 'relative';
+                
+                // Add permission panel
+                const panelHtml = renderPermissionPanel(data.permissionRequest);
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = panelHtml;
+                const panelElement = tempDiv.firstElementChild;
+                inputContainer.appendChild(panelElement);
+                
+                // Disable input while waiting for permission response
+                if (messageInput) messageInput.disabled = true;
+                
+                // Focus first button for keyboard navigation
+                setTimeout(() => {
+                  const firstButton = panelElement.querySelector('button');
+                  if (firstButton) firstButton.focus();
+                }, 100);
+              }
             } else if (data.type === 'agent') {
               const claudeData = data.data;
+              
+              // Track session ID from any message that has it
+              if (claudeData.session_id) {
+                currentSessionId = claudeData.session_id;
+                console.log('Captured session ID:', currentSessionId);
+              }
               
               switch (claudeData.type) {
                 case 'system':
@@ -1011,6 +1567,10 @@ async function sendMessage() {
                             updateMessage(assistantMessage, contentItem.text);
                           }
                         } else if (contentItem.type === 'tool_use') {
+                          // Cache tool use for permission detection
+                          if (contentItem.id) {
+                            recentToolUses.set(contentItem.id, contentItem);
+                          }
                           // Display tool use inline as a rich message
                           addRichMessage(renderToolUse(contentItem));
                         }
@@ -1041,6 +1601,10 @@ async function sendMessage() {
                     if (Array.isArray(claudeData.content)) {
                       for (const item of claudeData.content) {
                         if (item.type === 'tool_use') {
+                          // Cache tool use for permission detection
+                          if (item.id) {
+                            recentToolUses.set(item.id, item);
+                          }
                           addRichMessage(renderToolUse(item));
                         }
                       }
@@ -1049,6 +1613,10 @@ async function sendMessage() {
                   break;
                   
                 case 'tool_use':
+                  // Cache tool use for permission detection
+                  if (claudeData.id) {
+                    recentToolUses.set(claudeData.id, claudeData);
+                  }
                   addRichMessage(renderToolUse(claudeData));
                   break;
                   
@@ -1069,7 +1637,59 @@ async function sendMessage() {
                 case 'user':
                   // Handle user type messages with tool results
                   console.log('Processing user case:', claudeData);
-                  addRichMessage(renderUserToolResult(claudeData));
+                  
+                  // Check for permission errors in tool_result content
+                  let hasPermissionError = false;
+                  let content = null;
+                  
+                  // Extract content from various possible structures
+                  if (claudeData.message && claudeData.message.content) {
+                    content = claudeData.message.content;
+                  } else if (claudeData.content) {
+                    content = claudeData.content;
+                  }
+                  
+                  // Check if content contains tool_result with permission error
+                  if (content && Array.isArray(content)) {
+                    for (const item of content) {
+                      if (item.type === 'tool_result' && item.is_error) {
+                        const errorContent = item.content || '';
+                        if (errorContent.includes('requested permissions') || 
+                            errorContent.includes('permission to') ||
+                            errorContent.includes('haven\'t granted')) {
+                          // This is a permission error
+                          hasPermissionError = true;
+                          
+                          // Extract tool information from the cached tool use
+                          const lastToolUse = findLastToolUse(item.tool_use_id);
+                          if (lastToolUse) {
+                            const permissionRequest = {
+                              id: globalThis.crypto.randomUUID(),
+                              toolName: lastToolUse.name || 'Unknown Tool',
+                              patterns: extractPatternsFromTool(lastToolUse),
+                              toolUseId: item.tool_use_id,
+                              description: errorContent
+                            };
+                            
+                            // Show permission panel
+                            showPermissionPanel(permissionRequest);
+                            
+                            // Stop processing stream - abort current request immediately
+                            if (currentReader) {
+                              currentReader.cancel();
+                              console.log('Stream aborted due to permission error');
+                            }
+                          }
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  
+                  // If no permission error, render normally
+                  if (!hasPermissionError) {
+                    addRichMessage(renderUserToolResult(claudeData));
+                  }
                   break;
                   
                 case 'error':

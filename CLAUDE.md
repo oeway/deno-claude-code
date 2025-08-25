@@ -47,5 +47,6 @@ Test agent isolation (ensuring it only accesses its assigned folder).
 
 
 ## Important guidance
+claude-code-webui-main is not part of the project.
+You should not modify the folder claude-code-webui-main, that exists only for your reference and will be removed later, create files and project under the root folder. 
 
-You should not modify the folder claude-code-webui, that exists only for your reference and will be removed later, create files and project under the root folder.

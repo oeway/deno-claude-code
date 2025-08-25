@@ -1,11 +1,16 @@
 import { Handlers } from "$fresh/server.ts";
 import { manager } from "../../lib/manager.ts";
+import type { PermissionRequest, PermissionResponse } from "../../../../src/types.ts";
 
 const activeRequests = new Map();
+const permissionCallbacks = new Map<string, (response: PermissionResponse) => void>();
+
+// Make permissionCallbacks globally accessible for permission-response.ts
+(globalThis as any).permissionCallbacks = permissionCallbacks;
 
 export const handler: Handlers = {
   async POST(req) {
-    const { agentId, message } = await req.json();
+    const { agentId, message, sessionId, allowedTools } = await req.json();
     
     const abortController = new AbortController();
     activeRequests.set(agentId, abortController);
@@ -18,7 +23,27 @@ export const handler: Handlers = {
           const agent = manager.getAgent(agentId);
           if (!agent) throw new Error("Agent not found");
           
-          for await (const response of agent.execute(message)) {
+          // Permission callback that sends request to frontend and waits for response
+          const permissionCallback = async (request: PermissionRequest): Promise<PermissionResponse> => {
+            // Send permission request to frontend
+            const sseData = `data: ${JSON.stringify({
+              type: "permission_request",
+              permissionRequest: request
+            })}\n\n`;
+            controller.enqueue(encoder.encode(sseData));
+            
+            // Wait for response from frontend
+            return new Promise((resolve) => {
+              permissionCallbacks.set(request.id, (response) => {
+                permissionCallbacks.delete(request.id);
+                resolve(response);
+              });
+            });
+          };
+          
+          // Pass allowedTools to the execute method
+          const options = allowedTools ? { allowedTools } : undefined;
+          for await (const response of agent.execute(message, sessionId, permissionCallback, options)) {
             if (abortController.signal.aborted) break;
             
             const sseData = `data: ${JSON.stringify(response)}\n\n`;
@@ -36,6 +61,12 @@ export const handler: Handlers = {
           controller.enqueue(encoder.encode(errorMsg));
         } finally {
           activeRequests.delete(agentId);
+          // Clean up any pending permission callbacks
+          for (const [id, callback] of permissionCallbacks.entries()) {
+            if (id.startsWith(agentId)) {
+              permissionCallbacks.delete(id);
+            }
+          }
           controller.close();
         }
       }

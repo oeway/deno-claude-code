@@ -69,11 +69,14 @@ export class AgentManager {
     }
 
     const agentConfig: AgentConfig = {
+      name: options.name,
+      description: options.description,
       workingDirectory: options.workingDirectory ||
         join(this.baseDirectory, `agent-${Date.now()}`),
       permissionMode: options.permissionMode,
       allowedTools: options.allowedTools,
       mcpServers: options.mcpServers,
+      settingsTemplate: options.settingsTemplate,
     };
 
     // Ensure the working directory exists

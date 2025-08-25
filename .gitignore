@@ -1,6 +1,8 @@
 # Deno
 deno.lock
 
+claude-code-webui-main/
+
 # Agent workspaces
 examples/web-ui/agent-workspaces/
 /workspace/

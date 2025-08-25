@@ -7,7 +7,9 @@ import { query } from "npm:@anthropic-ai/claude-code@1.0.89";
 import type {
   AgentConfig,
   AgentInfo,
+  PermissionCallback,
   PermissionMode,
+  PermissionRequest,
   StreamResponse,
 } from "./types.ts";
 
@@ -22,18 +24,24 @@ export interface ConversationMessage {
  */
 export class Agent {
   readonly id: string;
+  readonly name?: string;
+  readonly description?: string;
   readonly workingDirectory: string;
-  private permissionMode: PermissionMode;
+  readonly permissionMode: PermissionMode;
   private allowedTools?: string[];
+  private settingsTemplate?: Record<string, any>;
   private abortController: AbortController | null = null;
   private conversation: ConversationMessage[] = [];
   private currentSessionId?: string;
 
   constructor(config: AgentConfig) {
     this.id = config.id || globalThis.crypto.randomUUID();
+    this.name = config.name;
+    this.description = config.description;
     this.workingDirectory = config.workingDirectory;
     this.permissionMode = config.permissionMode || "default";
     this.allowedTools = config.allowedTools;
+    this.settingsTemplate = config.settingsTemplate;
   }
 
   /**
@@ -43,6 +51,8 @@ export class Agent {
   async *execute(
     prompt: string,
     sessionId?: string,
+    permissionCallback?: PermissionCallback,
+    options?: { allowedTools?: string[] },
   ): AsyncGenerator<StreamResponse> {
     try {
       this.abortController = new AbortController();
@@ -55,6 +65,9 @@ export class Agent {
         timestamp: Date.now(),
       });
 
+      // Track allowed tools for this session - merge provided options with agent's allowed tools
+      let sessionAllowedTools = [...(this.allowedTools || []), ...(options?.allowedTools || [])];
+
       // Use the Claude Code SDK query function
       for await (
         const sdkMessage of query({
@@ -64,10 +77,49 @@ export class Agent {
             cwd: this.workingDirectory,
             permissionMode: this.permissionMode,
             ...(sessionId ? { resume: sessionId } : {}),
-            ...(this.allowedTools ? { allowedTools: this.allowedTools } : {}),
+            ...(sessionAllowedTools.length > 0 ? { allowedTools: sessionAllowedTools } : {}),
           },
         })
       ) {
+        // Check if this is a permission request
+        if (this.isPermissionRequest(sdkMessage)) {
+          if (permissionCallback) {
+            // Extract permission details from the SDK message
+            const permissionRequest = this.extractPermissionRequest(sdkMessage);
+            
+            // Yield permission request to the stream
+            yield {
+              type: "permission_request",
+              permissionRequest,
+            };
+
+            // Wait for user's response
+            const response = await permissionCallback(permissionRequest);
+            
+            // Handle the response
+            if (response.action === "allow" || response.action === "allow_permanent") {
+              // Add the tool to allowed tools for this session
+              const toolPattern = this.createToolPattern(permissionRequest);
+              sessionAllowedTools.push(toolPattern);
+              
+              // If permanent, update the agent's allowed tools
+              if (response.action === "allow_permanent") {
+                if (!this.allowedTools) {
+                  this.allowedTools = [];
+                }
+                this.allowedTools.push(toolPattern);
+              }
+              
+              // Continue execution with updated permissions
+              // Note: We need to restart the query with new allowed tools
+              // This is a limitation - we might need to handle this differently
+            } else {
+              // Permission denied - execution will likely fail
+              // Claude SDK will handle this appropriately
+            }
+          }
+        }
+        
         // Store all Claude messages in conversation
         this.conversation.push({
           type: "agent",
@@ -98,6 +150,70 @@ export class Agent {
   }
 
   /**
+   * Check if an SDK message is a permission request
+   */
+  private isPermissionRequest(sdkMessage: any): boolean {
+    // Check for permission-related patterns in the SDK message
+    // This might be a system message with permission info
+    if (sdkMessage.type === "system" && sdkMessage.subtype === "permission_required") {
+      return true;
+    }
+    
+    // Check for tool_use messages that might need permission
+    if (sdkMessage.type === "tool_use" && sdkMessage.needsPermission) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Extract permission request details from SDK message
+   */
+  private extractPermissionRequest(sdkMessage: any): PermissionRequest {
+    const requestId = globalThis.crypto.randomUUID();
+    
+    // Extract tool name and patterns based on message structure
+    let toolName = "Unknown Tool";
+    let patterns: string[] = [];
+    let description = "";
+    
+    if (sdkMessage.type === "system" && sdkMessage.subtype === "permission_required") {
+      toolName = sdkMessage.tool || "Unknown Tool";
+      patterns = sdkMessage.patterns || [];
+      description = sdkMessage.description || "";
+    } else if (sdkMessage.type === "tool_use") {
+      toolName = sdkMessage.name || "Unknown Tool";
+      // For tool_use, we might need to construct patterns from the input
+      if (sdkMessage.input && sdkMessage.name === "Bash") {
+        patterns = [`Bash(${sdkMessage.input.command || "*"}:*)`];
+      } else {
+        patterns = [toolName];
+      }
+    }
+    
+    return {
+      id: requestId,
+      toolName,
+      patterns,
+      toolUseId: sdkMessage.id,
+      description,
+    };
+  }
+
+  /**
+   * Create a tool pattern for allowed tools list
+   */
+  private createToolPattern(request: PermissionRequest): string {
+    // If we have specific patterns, use the first one
+    if (request.patterns.length > 0) {
+      return request.patterns[0];
+    }
+    // Otherwise, use the tool name
+    return request.toolName;
+  }
+
+  /**
    * Abort the current execution
    */
   abort(): void {
@@ -112,6 +228,8 @@ export class Agent {
   getInfo(): AgentInfo {
     return {
       id: this.id,
+      name: this.name,
+      description: this.description,
       workingDirectory: this.workingDirectory,
       permissionMode: this.permissionMode,
       allowedTools: this.allowedTools,
