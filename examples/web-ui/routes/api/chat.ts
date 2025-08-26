@@ -21,7 +21,10 @@ export const handler: Handlers = {
         
         try {
           const agent = manager.getAgent(agentId);
-          if (!agent) throw new Error("Agent not found");
+          if (!agent) {
+            console.error(`Agent ${agentId} not found. Available agents:`, manager.getAllAgents().map(a => a.id));
+            throw new Error("Agent not found");
+          }
           
           // Permission callback that sends request to frontend and waits for response
           const permissionCallback = async (request: PermissionRequest): Promise<PermissionResponse> => {

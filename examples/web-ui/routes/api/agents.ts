@@ -2,9 +2,9 @@ import { Handlers } from "$fresh/server.ts";
 import { manager } from "../../lib/manager.ts";
 
 export const handler: Handlers = {
-  GET(_req) {
+  async GET(_req) {
     const agents = manager.getAllAgents();
-    const agentInfo = agents.map(agent => agent.getInfo());
+    const agentInfo = await Promise.all(agents.map(agent => agent.getInfo()));
     return Response.json(agentInfo);
   },
   
@@ -15,12 +15,8 @@ export const handler: Handlers = {
       config.permissionMode = 'default';
     }
     const agent = await manager.createAgent(config);
-    return Response.json({
-      id: agent.id,
-      name: agent.name,
-      description: agent.description,
-      workingDirectory: agent.workingDirectory,
-      permissionMode: agent.permissionMode
-    });
+    // Get the full agent info
+    const agentInfo = await agent.getInfo();
+    return Response.json(agentInfo);
   },
 };

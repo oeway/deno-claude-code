@@ -21,7 +21,6 @@ async function testMcpFlow() {
     mcpServers: [
       {
         name: "filesystem",
-        type: "stdio",
         command: "npx",
         args: ["-y", "@modelcontextprotocol/server-filesystem"],
         env: {

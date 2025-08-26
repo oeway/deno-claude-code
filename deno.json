@@ -12,7 +12,7 @@
     "example:mcp": "deno run --allow-all examples/mcp-server.ts",
     "example:mcp-advanced": "deno run --allow-all examples/mcp-advanced.ts",
     "example:mcp-default": "deno run --allow-all examples/mcp-default-servers.ts",
-    "example:web-ui": "cd examples/web-ui && deno run --allow-all main.ts",
+    "example:web-ui": "cd examples/web-ui && deno run --allow-all --unstable-worker-options main.ts",
     "test:web-ui": "deno test --allow-all tests/web_ui_test.ts",
     "fmt": "deno fmt",
     "lint": "deno lint",

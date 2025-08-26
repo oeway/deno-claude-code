@@ -8,6 +8,7 @@
 
 export { Agent } from "./agent.ts";
 export { AgentManager } from "./manager.ts";
+export { WorkerAgentProxy } from "./worker-agent.ts";
 export type {
   AgentConfig,
   AgentInfo,
@@ -16,5 +17,8 @@ export type {
   ManagerInfo,
   MCPServerConfig,
   PermissionMode,
+  PermissionRequest,
+  PermissionResponse,
+  PermissionCallback,
   StreamResponse,
 } from "./types.ts";

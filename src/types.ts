@@ -6,10 +6,11 @@
  * Permission modes matching Claude CLI
  */
 export type PermissionMode =
-  | "default"
-  | "acceptEdits"
-  | "bypassPermissions"
-  | "plan";
+  | "default"         // Standard mode with shell access (security risk)
+  | "strict"          // No shell access, true file system isolation
+  | "acceptEdits"     // Auto-accept file edits
+  | "bypassPermissions" // Full system access, no sandbox
+  | "plan";           // Planning mode
 
 /**
  * MCP Server configuration

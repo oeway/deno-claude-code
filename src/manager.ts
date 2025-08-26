@@ -6,12 +6,14 @@
 import { ensureDir } from "https://deno.land/std@0.224.0/fs/mod.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { Agent } from "./agent.ts";
+import { WorkerAgentProxy } from "./worker-agent.ts";
 import type {
   AgentConfig,
   CreateAgentOptions,
   ManagerConfig,
   ManagerInfo,
   MCPServerConfig,
+  PermissionCallback,
   StreamResponse,
 } from "./types.ts";
 
@@ -19,7 +21,7 @@ import type {
  * Manager class for creating and managing multiple agents
  */
 export class AgentManager {
-  private agents: Map<string, Agent> = new Map();
+  private agents: Map<string, WorkerAgentProxy> = new Map();
   private baseDirectory: string;
   private verified = false;
   private settingsTemplatePath: string;
@@ -63,7 +65,7 @@ export class AgentManager {
   /**
    * Create a new agent
    */
-  async createAgent(options: CreateAgentOptions = {}): Promise<Agent> {
+  async createAgent(options: CreateAgentOptions = {}): Promise<WorkerAgentProxy> {
     if (!this.verified) {
       await this.initialize();
     }
@@ -100,23 +102,98 @@ export class AgentManager {
       );
     }
 
-    const agent = new Agent(agentConfig);
-    this.agents.set(agent.id, agent);
+    // Get user home directory for npm cache
+    const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || "";
+    const npmCacheDir = join(homeDir, "Library/Caches/deno/npm");
+    
+    // Create Deno permissions for the worker based on permission mode
+    // IMPORTANT: The 'run' permission allows Claude Code SDK to execute shell commands
+    // which can bypass the file system sandbox. For true isolation, use "strict" mode.
+    let permissions: Deno.PermissionOptions;
+    
+    switch (agentConfig.permissionMode) {
+      case "bypassPermissions":
+        // Full access - no sandbox
+        permissions = {
+          read: true,
+          write: true,
+          net: true,
+          env: true,
+          run: true,
+          ffi: false,
+          hrtime: false,
+        };
+        break;
+        
+      case "strict":
+        // NOTE: "strict" mode is not possible with Claude Code SDK
+        // The SDK requires 'run' permission to spawn its Node process
+        // This fundamentally breaks isolation as shell commands can access any file
+        console.warn("⚠️  Warning: 'strict' mode not supported with Claude Code SDK");
+        console.warn("   The SDK requires 'run' permission which allows shell commands");
+        console.warn("   that can bypass file system isolation. Using restricted mode instead.");
+        
+        // Best we can do: limit to specific commands
+        permissions = {
+          read: [
+            agentConfig.workingDirectory,
+            npmCacheDir, // Allow reading npm modules
+          ],
+          write: [agentConfig.workingDirectory],
+          net: false,
+          env: true, // Needed for Claude Code SDK
+          run: ["node"], // Only allow Node (still a security risk)
+          ffi: false,
+          hrtime: false,
+        };
+        break;
+        
+      case "default":
+      default:
+        // Default mode - balanced between functionality and security
+        // WARNING: 'run: true' allows shell commands that can bypass the sandbox
+        permissions = {
+          read: [
+            agentConfig.workingDirectory,
+            npmCacheDir, // Allow reading npm modules
+          ],
+          write: [agentConfig.workingDirectory],
+          net: false,
+          env: true, // Needed for Claude Code SDK
+          run: true, // Allows shell commands (security risk)
+          ffi: false,
+          hrtime: false,
+        };
+        break;
+    }
 
-    return agent;
+    // Add network permissions if MCP servers are configured
+    if (allMcpServers.some(s => s.url)) {
+      permissions.net = true;
+    }
+
+    // Create the worker agent proxy
+    const agentProxy = new WorkerAgentProxy(agentConfig, permissions);
+    
+    // Initialize the agent in the worker
+    await agentProxy.initialize(agentConfig);
+    
+    this.agents.set(agentProxy.id, agentProxy);
+
+    return agentProxy;
   }
 
   /**
    * Get agent by ID
    */
-  getAgent(id: string): Agent | undefined {
+  getAgent(id: string): WorkerAgentProxy | undefined {
     return this.agents.get(id);
   }
 
   /**
    * Get all agents
    */
-  getAllAgents(): Agent[] {
+  getAllAgents(): WorkerAgentProxy[] {
     return Array.from(this.agents.values());
   }
 
@@ -127,13 +204,15 @@ export class AgentManager {
     agentId: string,
     prompt: string,
     sessionId?: string,
+    permissionCallback?: PermissionCallback,
+    options?: { allowedTools?: string[] },
   ): AsyncGenerator<StreamResponse> {
     const agent = this.agents.get(agentId);
     if (!agent) {
       throw new Error(`Agent with id ${agentId} not found`);
     }
 
-    yield* agent.execute(prompt, sessionId);
+    yield* agent.execute(prompt, sessionId, permissionCallback, options);
   }
 
   /**
@@ -159,6 +238,7 @@ export class AgentManager {
     }
 
     agent.abort();
+    agent.terminate(); // Terminate the worker
     this.agents.delete(id);
 
     // Optionally clean up the working directory
@@ -196,6 +276,7 @@ export class AgentManager {
     // Stop all agents
     for (const agent of this.agents.values()) {
       agent.abort();
+      agent.terminate();
     }
 
     // Clear the agents map
@@ -293,11 +374,13 @@ export class AgentManager {
   /**
    * Get manager information
    */
-  getInfo(): ManagerInfo {
+  async getInfo(): Promise<ManagerInfo> {
     return {
       baseDirectory: this.baseDirectory,
       agentCount: this.agents.size,
-      agents: Array.from(this.agents.values()).map((agent) => agent.getInfo()),
+      agents: await Promise.all(
+        Array.from(this.agents.values()).map((agent) => agent.getInfo())
+      ),
       verified: this.verified,
       defaultMcpServers: this.defaultMcpServers,
     };
