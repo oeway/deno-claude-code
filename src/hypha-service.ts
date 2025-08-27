@@ -84,7 +84,7 @@ function getToolIcon(toolName: string): string {
 /**
  * Format stream response into human-readable message
  */
-function formatStreamMessage(response: StreamResponse): string | null {
+export function formatStreamMessage(response: StreamResponse): string | null {
   if (response.type === "agent" && response.data) {
     const agentData = response.data as any;
     const msgType = agentData.type;
@@ -116,12 +116,36 @@ function formatStreamMessage(response: StreamResponse): string | null {
           const toolIcon = getToolIcon(toolName);
           
           let inputStr = "";
-          if (["Write", "Edit", "MultiEdit"].includes(toolName)) {
+          if (toolName === "Write") {
+            if (toolInput.file_path) {
+              const fileName = String(toolInput.file_path).split('/').pop() || toolInput.file_path;
+              inputStr = `\n    📄 File: ${toolInput.file_path}`;
+              const content = toolInput.content || "";
+              const lines = String(content).split('\n');
+              if (lines.length > 0) {
+                inputStr += `\n    📝 Content: ${lines.length} line${lines.length === 1 ? '' : 's'}`;
+                if (content.length < 200) {
+                  // Show short content directly
+                  const preview = lines.slice(0, 3).map(l => 
+                    l.length > 50 ? l.substring(0, 50) + "..." : l
+                  ).join('\n        ');
+                  if (preview) {
+                    inputStr += `\n        ${preview}`;
+                  }
+                }
+              }
+            }
+          } else if (toolName === "Edit" || toolName === "MultiEdit") {
             if (toolInput.file_path) {
               inputStr = `\n    📄 File: ${toolInput.file_path}`;
-            }
-            if (toolInput.content && String(toolInput.content).length < 200) {
-              inputStr += `\n    📝 Content preview: ${String(toolInput.content).substring(0, 100)}...`;
+              if (toolName === "MultiEdit" && toolInput.edits) {
+                const edits = toolInput.edits as any[];
+                inputStr += `\n    ✏️  Edits: ${edits.length} change${edits.length === 1 ? '' : 's'}`;
+              } else if (toolInput.old_string) {
+                const oldStr = String(toolInput.old_string);
+                const newStr = String(toolInput.new_string || "");
+                inputStr += `\n    ✏️  Replacing: ${oldStr.length} chars → ${newStr.length} chars`;
+              }
             }
           } else if (toolName === "Bash") {
             if (toolInput.command) {
@@ -135,10 +159,64 @@ function formatStreamMessage(response: StreamResponse): string | null {
             if (toolInput.path) {
               inputStr = `\n    📂 Listing: ${toolInput.path}`;
             }
+          } else if (toolName === "TodoWrite" && toolInput.todos) {
+            // Special formatting for TodoWrite
+            const todos = toolInput.todos as any[];
+            inputStr = "\n    📝 Todo List Update:";
+            for (const todo of todos) {
+              const statusIcon = todo.status === "completed" ? "✅" : 
+                               todo.status === "in_progress" ? "⏳" : "⭕";
+              const displayText = todo.status === "in_progress" && todo.activeForm 
+                ? todo.activeForm 
+                : todo.content;
+              inputStr += `\n        ${statusIcon} ${displayText}`;
+            }
+          } else if (toolName === "Grep" && toolInput.pattern) {
+            inputStr = `\n    🔎 Pattern: "${toolInput.pattern}"`;
+            if (toolInput.path) inputStr += `\n    📁 Path: ${toolInput.path}`;
+            if (toolInput.glob) inputStr += `\n    🎯 Filter: ${toolInput.glob}`;
+          } else if (toolName === "WebSearch" && toolInput.query) {
+            inputStr = `\n    🔍 Query: "${toolInput.query}"`;
+          } else if (toolName === "WebFetch" && toolInput.url) {
+            inputStr = `\n    🌐 URL: ${toolInput.url}`;
+            if (toolInput.prompt) {
+              const promptPreview = String(toolInput.prompt).substring(0, 100);
+              inputStr += `\n    📝 Prompt: ${promptPreview}${toolInput.prompt.length > 100 ? '...' : ''}`;
+            }
           } else if (Object.keys(toolInput).length > 0) {
+            // For other tools, show formatted parameters
             const params: string[] = [];
-            for (const [k, v] of Object.entries(toolInput).slice(0, 3)) {
-              params.push(`${k}=${String(v).substring(0, 50)}`);
+            for (const [key, value] of Object.entries(toolInput)) {
+              // Format value based on type
+              let formattedValue: string;
+              if (value === null || value === undefined) {
+                formattedValue = String(value);
+              } else if (typeof value === 'boolean' || typeof value === 'number') {
+                formattedValue = String(value);
+              } else if (typeof value === 'string') {
+                formattedValue = value.length > 50 ? value.substring(0, 50) + "..." : value;
+              } else if (Array.isArray(value)) {
+                if (value.length === 0) {
+                  formattedValue = "[]";
+                } else if (value.length <= 3) {
+                  formattedValue = `[${value.map(v => 
+                    typeof v === 'object' ? '{...}' : String(v)
+                  ).join(", ")}]`;
+                } else {
+                  formattedValue = `[${value.length} items]`;
+                }
+              } else if (typeof value === 'object') {
+                const keys = Object.keys(value);
+                formattedValue = keys.length === 0 ? "{}" : `{${keys.slice(0, 3).join(", ")}${keys.length > 3 ? "..." : ""}}`;
+              } else {
+                formattedValue = String(value);
+              }
+              
+              params.push(`${key}=${formattedValue}`);
+              if (params.length >= 3 && Object.keys(toolInput).length > 3) {
+                params.push("...");
+                break;
+              }
             }
             if (params.length > 0) {
               inputStr = `\n    ⚙️  Parameters: ${params.join(", ")}`;
@@ -179,22 +257,152 @@ function formatStreamMessage(response: StreamResponse): string | null {
           const isError = item.is_error || false;
           let resultContent = item.content || "";
           
-          // Truncate long results
-          if (resultContent.length > 500) {
+          // Handle TodoWrite and other special results
+          const toolUseId = item.tool_use_id || "";
+          
+          // For TodoWrite results, keep them simple
+          if (toolUseId && resultContent.includes("Todos have been modified")) {
+            results.push(`✅ Todo list updated successfully`);
+            continue;
+          }
+          
+          // For Bash commands, check for common patterns
+          if (resultContent.includes("<status>running</status>")) {
+            // It's a process status message
+            results.push(`🔄 Process running...`);
+            continue;
+          } else if (resultContent.includes("<status>completed</status>")) {
+            results.push(`✅ Process completed`);
+            continue;
+          }
+          
+          // Truncate long results but be more generous
+          if (resultContent.length > 1000) {
             const lines = resultContent.split('\n');
-            if (lines.length > 15) {
-              resultContent = lines.slice(0, 15).join('\n') + `\n    ... (${lines.length - 15} more lines)`;
+            if (lines.length > 20) {
+              resultContent = lines.slice(0, 20).join('\n') + `\n    ... (${lines.length - 20} more lines)`;
             } else {
-              resultContent = resultContent.substring(0, 500) + "...";
+              resultContent = resultContent.substring(0, 1000) + "...";
             }
           }
           
           if (isError) {
-            results.push(`⚠️  Tool error:\n    ${resultContent}`);
+            // Handle permission errors specially
+            if (resultContent.includes("permission") || resultContent.includes("denied")) {
+              results.push(`🔒 Permission denied:\n    ${resultContent}`);
+            } else {
+              results.push(`⚠️  Tool error:\n    ${resultContent}`);
+            }
           } else {
             if (resultContent.trim()) {
-              const indented = resultContent.split('\n').join('\n    ');
-              results.push(`📊 Tool result:\n    ${indented}`);
+              // Check if it's a file listing result
+              if (resultContent.includes("NOTE: do any of the files")) {
+                // It's an LS result with security check
+                const lines = resultContent.split('\n');
+                const fileLines = lines.filter(l => !l.includes("NOTE:"));
+                const noteLines = lines.filter(l => l.includes("NOTE:"));
+                
+                if (fileLines.length > 0) {
+                  const indented = fileLines.join('\n    ');
+                  results.push(`📊 Tool result:\n    ${indented}`);
+                }
+                if (noteLines.length > 0) {
+                  results.push(`ℹ️  ${noteLines[0]}`);
+                }
+              } else if (resultContent.includes("<status>") || resultContent.includes("<timestamp>")) {
+                // Handle XML/HTML-like status messages
+                const statusMatch = resultContent.match(/<status>(.*?)<\/status>/);
+                const timestampMatch = resultContent.match(/<timestamp>(.*?)<\/timestamp>/);
+                const messageMatch = resultContent.match(/<message>(.*?)<\/message>/s);
+                
+                if (statusMatch || timestampMatch) {
+                  let formatted = "📊 Tool result:";
+                  if (statusMatch) {
+                    const status = statusMatch[1];
+                    const statusIcon = status === "running" ? "🔄" : 
+                                     status === "completed" ? "✅" :
+                                     status === "failed" ? "❌" : "ℹ️";
+                    formatted += `\n    ${statusIcon} Status: ${status}`;
+                  }
+                  if (timestampMatch) {
+                    const timestamp = new Date(timestampMatch[1]).toLocaleString();
+                    formatted += `\n    ⏰ Time: ${timestamp}`;
+                  }
+                  if (messageMatch) {
+                    formatted += `\n    📝 Message: ${messageMatch[1].trim()}`;
+                  }
+                  results.push(formatted);
+                } else {
+                  // Fallback for other XML/HTML content
+                  const cleaned = resultContent
+                    .replace(/<[^>]+>/g, '') // Remove all tags
+                    .replace(/\s+/g, ' ')     // Normalize whitespace
+                    .trim();
+                  if (cleaned) {
+                    results.push(`📊 Tool result: ${cleaned}`);
+                  } else {
+                    results.push(`📊 Tool completed`);
+                  }
+                }
+              } else if (resultContent.includes("```") || resultContent.includes("```python")) {
+                // Handle code blocks
+                const codeBlockMatch = resultContent.match(/```(?:\w+)?\n?([\s\S]*?)```/);
+                if (codeBlockMatch) {
+                  const code = codeBlockMatch[1].trim();
+                  const beforeCode = resultContent.substring(0, resultContent.indexOf("```")).trim();
+                  const afterCode = resultContent.substring(resultContent.lastIndexOf("```") + 3).trim();
+                  
+                  let formatted = "📊 Tool result:";
+                  if (beforeCode) {
+                    formatted += `\n    ${beforeCode}`;
+                  }
+                  formatted += "\n    💻 Code:";
+                  const codeLines = code.split('\n').slice(0, 10);
+                  for (const line of codeLines) {
+                    formatted += `\n        ${line}`;
+                  }
+                  if (code.split('\n').length > 10) {
+                    formatted += `\n        ... (${code.split('\n').length - 10} more lines)`;
+                  }
+                  if (afterCode) {
+                    formatted += `\n    ${afterCode}`;
+                  }
+                  results.push(formatted);
+                } else {
+                  // Regular result with code markers but no proper blocks
+                  const indented = resultContent.split('\n').join('\n    ');
+                  results.push(`📊 Tool result:\n    ${indented}`);
+                }
+              } else if (resultContent.startsWith("File ") && resultContent.includes("successfully")) {
+                // Handle file operation results
+                results.push(`✅ ${resultContent.trim()}`);
+              } else if (resultContent.includes("Error:") || resultContent.includes("error")) {
+                // Handle error-like messages that aren't marked as errors
+                results.push(`⚠️  Warning:\n    ${resultContent.trim()}`);
+              } else {
+                // Regular result - check if it's JSON-like
+                if (resultContent.trim().startsWith("{") || resultContent.trim().startsWith("[")) {
+                  try {
+                    const parsed = JSON.parse(resultContent);
+                    // Format JSON nicely
+                    const formatted = JSON.stringify(parsed, null, 2);
+                    const lines = formatted.split('\n').slice(0, 10);
+                    let display = "📊 Tool result (JSON):\n    " + lines.join('\n    ');
+                    if (formatted.split('\n').length > 10) {
+                      display += `\n    ... (${formatted.split('\n').length - 10} more lines)`;
+                    }
+                    results.push(display);
+                  } catch {
+                    // Not valid JSON, treat as regular text
+                    const indented = resultContent.split('\n').join('\n    ');
+                    results.push(`📊 Tool result:\n    ${indented}`);
+                  }
+                } else {
+                  // Regular text result
+                  const indented = resultContent.split('\n').join('\n    ');
+                  results.push(`📊 Tool result:\n    ${indented}`);
+                }
+              }
             } else {
               results.push(`📊 Tool completed successfully`);
             }
