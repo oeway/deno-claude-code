@@ -18,7 +18,6 @@
 import { hyphaWebsocketClient } from "npm:hypha-rpc";
 import { AgentManager } from "./manager.ts";
 import type {
-  AgentConfig,
   CreateAgentOptions,
   PermissionRequest,
   PermissionResponse,
