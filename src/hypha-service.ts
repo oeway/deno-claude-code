@@ -23,7 +23,7 @@
  * - SERVICE_VISIBILITY: Service visibility (default: public)
  */
 
-import { hyphaWebsocketClient } from "npm:hypha-rpc";
+import { hyphaWebsocketClient } from "hypha-rpc";
 import { AgentManager } from "./manager.ts";
 import type {
   AgentConfig,

@@ -1,0 +1,77 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: claude-agent-worker
+  namespace: hypha
+spec:
+  # Job will be automatically cleaned up after completion
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: claude-agent-worker
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: claude-agent
+        image: oeway/deno-claude-code:0.1.0
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false
+
+        env:
+        # Sensitive tokens from secret
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: deno-claude-code-config
+              key: ANTHROPIC_API_KEY
+        - name: HYPHA_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: deno-claude-code-config
+              key: HYPHA_TOKEN
+
+        # Non-sensitive configuration
+        - name: HYPHA_SERVER_URL
+          value: "https://hypha.aicell.io"
+        - name: HYPHA_WORKSPACE
+          value: "ws-user-github|478667"
+        - name: AGENT_BASE_DIRECTORY
+          value: "/app/agent-workspaces"
+        - name: AGENT_MAX_COUNT
+          value: "10"
+        - name: SERVICE_ID
+          value: "claude-agents"
+        - name: SERVICE_VISIBILITY
+          value: "public"
+
+        # Resource limits
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+
+        # Volume mounts for persistent storage (optional)
+        volumeMounts:
+        - name: agent-workspaces
+          mountPath: /app/agent-workspaces
+
+      volumes:
+      - name: agent-workspaces
+        emptyDir: {}

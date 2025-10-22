@@ -3,7 +3,7 @@
  * Uses the Claude Code SDK query function with settings.json for configuration
  */
 
-import { query } from "npm:@anthropic-ai/claude-agent-sdk";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AgentConfig,
   AgentInfo,
@@ -311,7 +311,7 @@ export class Agent {
     try {
       // Check if we can import the SDK
       const { query: testQuery } = await import(
-        "npm:@anthropic-ai/claude-agent-sdk"
+        "@anthropic-ai/claude-agent-sdk"
       );
       return typeof testQuery === "function";
     } catch (error) {
