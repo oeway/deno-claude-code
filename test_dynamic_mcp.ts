@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run --allow-all
 
-import { query } from "npm:@anthropic-ai/claude-code@1.0.89";
+import { query } from "npm:@anthropic-ai/claude-code@2.0.25";
 
 async function testDynamicMcp() {
   console.log("Testing dynamic MCP configuration...\n");
