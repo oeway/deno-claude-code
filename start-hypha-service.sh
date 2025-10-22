@@ -6,6 +6,12 @@
 echo "🚀 Starting Claude Agent Manager Hypha Service..."
 echo "================================================"
 
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
+    echo "📄 Loading environment variables from .env file..."
+    export $(grep -v '^#' .env | xargs)
+fi
+
 # Default configuration
 HYPHA_SERVER_URL="${HYPHA_SERVER_URL:-https://hypha.aicell.io}"
 AGENT_BASE_DIRECTORY="${AGENT_BASE_DIRECTORY:-./agent-workspaces}"
