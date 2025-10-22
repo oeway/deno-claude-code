@@ -9,6 +9,7 @@ import type {
   AgentConfig,
   AgentInfo,
   PermissionCallback,
+  PermissionMode,
   StreamResponse,
 } from "./types.ts";
 import { ConversationMessage } from "./agent.ts";
@@ -232,12 +233,12 @@ if (typeof self !== "undefined" && self.constructor.name === "DedicatedWorkerGlo
  */
 export class WorkerAgentProxy {
   private worker: Worker;
-  private workerAPI: Comlink.Remote<WorkerAgent>;
+  private workerAPI: any; // Comlink.Remote type not exported, use any
   readonly id: string;
   readonly name?: string;
   readonly description?: string;
   readonly workingDirectory: string;
-  readonly permissionMode: string;
+  readonly permissionMode: PermissionMode;
 
   constructor(
     config: AgentConfig,
@@ -263,7 +264,7 @@ export class WorkerAgentProxy {
     });
 
     // Wrap the worker with Comlink
-    this.workerAPI = Comlink.wrap<WorkerAgent>(this.worker);
+    this.workerAPI = Comlink.wrap(this.worker);
   }
 
   /**

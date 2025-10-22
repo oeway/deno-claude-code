@@ -1,10 +1,18 @@
 /**
- * Hypha Service for Claude Code Agent Manager
- * 
+ * Hypha Service for Claude Agent Manager
+ *
  * This service provides a comprehensive interface to the Agent Manager
  * through Hypha's distributed service protocol, enabling remote access
- * and streaming capabilities for Claude Code agents.
- * 
+ * and streaming capabilities for Claude agents powered by the Claude Agent SDK.
+ *
+ * Features:
+ * - Create and manage multiple isolated Claude agents
+ * - Stream execution results in real-time
+ * - Handle permission requests interactively
+ * - Configure MCP servers, tools, and custom system prompts
+ * - Support for programmatic subagents
+ * - Session persistence and conversation history
+ *
  * Environment Variables:
  * - HYPHA_SERVER_URL: Hypha server URL (default: https://hypha.aicell.io)
  * - HYPHA_WORKSPACE: Optional workspace name for service registration
@@ -831,7 +839,8 @@ export class HyphaAgentService {
   help(): any {
     console.log(`📦 [HELP] Documentation requested`);
     return {
-      description: "Claude Agent Manager Service - Manage and interact with Claude Code agents",
+      description: "Claude Agent Manager Service - Manage and interact with Claude agents powered by Claude Agent SDK",
+      version: "2.0.0 (Claude Agent SDK)",
       methods: {
         // Lifecycle
         createAgent: {
@@ -844,12 +853,29 @@ export class HyphaAgentService {
                 name: "string - Agent name",
                 description: "string - Agent description",
                 workingDirectory: "string - Working directory path",
-                permissionMode: "string - Permission mode (default, strict, bypassPermissions)",
+                permissionMode: "string - Permission mode (default, acceptEdits, bypassPermissions, plan)",
                 allowedTools: "string[] - List of allowed tools",
+                disallowedTools: "string[] - List of disallowed tools",
+                model: "string - Claude model to use (e.g., 'claude-sonnet-4-5-20250929')",
+                fallbackModel: "string - Fallback model if primary fails",
+                systemPrompt: "string | object - System prompt or { type: 'preset', preset: 'claude_code' }",
+                settingSources: "array - Filesystem settings to load: ['user', 'project', 'local']",
+                agents: "object - Programmatic subagent definitions",
+                additionalDirectories: "string[] - Additional directories for access",
+                maxTurns: "number - Maximum conversation turns",
+                maxThinkingTokens: "number - Maximum tokens for thinking",
+                includePartialMessages: "boolean - Include partial message events",
+                mcpServers: "array - MCP server configurations",
+                env: "object - Environment variables",
               },
             },
           },
           returns: "AgentInfo - Created agent information",
+          examples: {
+            basic: "{ name: 'MyAgent', permissionMode: 'bypassPermissions' }",
+            withSubagents: "{ agents: { 'code-reviewer': { description: 'Reviews code', prompt: 'You are a code reviewer', tools: ['Read', 'Grep'] } } }",
+            withClaudeCodePrompt: "{ systemPrompt: { type: 'preset', preset: 'claude_code' }, settingSources: ['project'] }",
+          },
         },
         getAgent: {
           description: "Get agent information by ID",
@@ -976,6 +1002,22 @@ async function* executeWithPermissions() {
           AGENT_MAX_COUNT: "Maximum concurrent agents (default: 10)",
           SERVICE_ID: "Service registration ID (default: claude-agent-manager)",
           SERVICE_VISIBILITY: "Service visibility: public/protected (default: public)",
+        },
+        newFeatures: {
+          "Programmatic Subagents": "Define specialized subagents via the 'agents' config option",
+          "Custom System Prompts": "Use custom prompts or Claude Code preset with 'systemPrompt'",
+          "Setting Sources Control": "Choose which filesystem settings to load with 'settingSources'",
+          "Model Selection": "Specify model and fallback model for each agent",
+          "Enhanced Tool Control": "Use both allowedTools and disallowedTools for fine-grained control",
+          "MCP via SDK": "MCP servers now configured directly via SDK options (no .mcp.json files)",
+          "Partial Messages": "Stream partial messages with 'includePartialMessages' option",
+          "Extended Limits": "Configure maxTurns and maxThinkingTokens per agent",
+        },
+        migrationNotes: {
+          "SDK Update": "Now using @anthropic-ai/claude-agent-sdk (formerly @anthropic-ai/claude-code)",
+          "System Prompt": "No longer uses Claude Code prompt by default - explicitly set if needed",
+          "Settings": "Filesystem settings not loaded by default - use settingSources to enable",
+          "MCP Config": "MCP servers passed directly to SDK, no .mcp.json files created",
         },
       },
     };

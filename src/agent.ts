@@ -3,7 +3,7 @@
  * Uses the Claude Code SDK query function with settings.json for configuration
  */
 
-import { query } from "npm:@anthropic-ai/claude-code@1.0.89";
+import { query } from "npm:@anthropic-ai/claude-agent-sdk";
 import type {
   AgentConfig,
   AgentInfo,
@@ -29,7 +29,8 @@ export class Agent {
   readonly workingDirectory: string;
   readonly permissionMode: PermissionMode;
   private allowedTools?: string[];
-  private settingsTemplate?: Record<string, any>;
+  private disallowedTools?: string[];
+  private config: AgentConfig;
   private abortController: AbortController | null = null;
   private conversation: ConversationMessage[] = [];
   private currentSessionId?: string;
@@ -41,12 +42,13 @@ export class Agent {
     this.workingDirectory = config.workingDirectory;
     this.permissionMode = config.permissionMode || "default";
     this.allowedTools = config.allowedTools;
-    this.settingsTemplate = config.settingsTemplate;
+    this.disallowedTools = config.disallowedTools;
+    this.config = config;
   }
 
   /**
-   * Execute a command using the Claude Code SDK query function
-   * Settings are configured via settings.json in the working directory
+   * Execute a command using the Claude Agent SDK query function
+   * Settings are configured via options passed to the SDK
    */
   async *execute(
     prompt: string,
@@ -57,7 +59,7 @@ export class Agent {
     try {
       this.abortController = new AbortController();
       this.currentSessionId = sessionId;
-      
+
       // Add user message to conversation
       this.conversation.push({
         type: "user",
@@ -68,17 +70,54 @@ export class Agent {
       // Track allowed tools for this session - merge provided options with agent's allowed tools
       let sessionAllowedTools = [...(this.allowedTools || []), ...(options?.allowedTools || [])];
 
-      // Use the Claude Code SDK query function
+      // Build SDK options from agent config
+      const sdkOptions: any = {
+        abortController: this.abortController,
+        cwd: this.workingDirectory,
+        permissionMode: this.permissionMode,
+        ...(sessionId ? { resume: sessionId } : {}),
+        ...(sessionAllowedTools.length > 0 ? { allowedTools: sessionAllowedTools } : {}),
+        ...(this.disallowedTools && this.disallowedTools.length > 0 ? { disallowedTools: this.disallowedTools } : {}),
+        ...(this.config.model ? { model: this.config.model } : {}),
+        ...(this.config.fallbackModel ? { fallbackModel: this.config.fallbackModel } : {}),
+        ...(this.config.agents ? { agents: this.config.agents } : {}),
+        ...(this.config.systemPrompt ? { systemPrompt: this.config.systemPrompt } : {}),
+        ...(this.config.settingSources ? { settingSources: this.config.settingSources } : {}),
+        ...(this.config.additionalDirectories ? { additionalDirectories: this.config.additionalDirectories } : {}),
+        ...(this.config.maxTurns ? { maxTurns: this.config.maxTurns } : {}),
+        ...(this.config.maxThinkingTokens ? { maxThinkingTokens: this.config.maxThinkingTokens } : {}),
+        ...(this.config.includePartialMessages ? { includePartialMessages: this.config.includePartialMessages } : {}),
+        ...(this.config.env ? { env: this.config.env } : {}),
+      };
+
+      // Convert MCP servers to SDK format if provided
+      if (this.config.mcpServers && this.config.mcpServers.length > 0) {
+        sdkOptions.mcpServers = {};
+        for (const server of this.config.mcpServers) {
+          if (server.url) {
+            // HTTP/SSE servers - determine type based on URL or transport
+            const serverType = server.transport === "http" || !server.transport ? "http" : "sse";
+            sdkOptions.mcpServers[server.name] = {
+              type: serverType,
+              url: server.url,
+            };
+          } else if (server.command) {
+            // stdio servers
+            sdkOptions.mcpServers[server.name] = {
+              type: "stdio",
+              command: server.command,
+              args: server.args || [],
+              env: server.env || {},
+            };
+          }
+        }
+      }
+
+      // Use the Claude Agent SDK query function
       for await (
         const sdkMessage of query({
           prompt,
-          options: {
-            abortController: this.abortController,
-            cwd: this.workingDirectory,
-            permissionMode: this.permissionMode,
-            ...(sessionId ? { resume: sessionId } : {}),
-            ...(sessionAllowedTools.length > 0 ? { allowedTools: sessionAllowedTools } : {}),
-          },
+          options: sdkOptions,
         })
       ) {
         // Check if this is a permission request
@@ -272,7 +311,7 @@ export class Agent {
     try {
       // Check if we can import the SDK
       const { query: testQuery } = await import(
-        "npm:@anthropic-ai/claude-code@1.0.89"
+        "npm:@anthropic-ai/claude-agent-sdk"
       );
       return typeof testQuery === "function";
     } catch (error) {

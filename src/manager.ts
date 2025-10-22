@@ -77,8 +77,19 @@ export class AgentManager {
         join(this.baseDirectory, `agent-${Date.now()}`),
       permissionMode: options.permissionMode,
       allowedTools: options.allowedTools,
+      disallowedTools: options.disallowedTools,
       mcpServers: options.mcpServers,
       settingsTemplate: options.settingsTemplate,
+      model: options.model,
+      fallbackModel: options.fallbackModel,
+      agents: options.agents,
+      systemPrompt: options.systemPrompt,
+      settingSources: options.settingSources,
+      additionalDirectories: options.additionalDirectories,
+      maxTurns: options.maxTurns,
+      maxThinkingTokens: options.maxThinkingTokens,
+      includePartialMessages: options.includePartialMessages,
+      env: options.env,
     };
 
     // Ensure the working directory exists
@@ -90,27 +101,19 @@ export class AgentManager {
       options.mcpServers || [],
     );
 
-    // Create .mcp.json in project root with MCP servers configuration
-    // Also create .claude/settings.local.json for auto-approval
-    if (allMcpServers.length > 0) {
-      await this.createMcpConfigFile(
-        agentConfig.workingDirectory,
-        allMcpServers,
-      );
-      await this.createClaudeSettings(
-        agentConfig.workingDirectory,
-      );
-    }
+    // Update agent config with merged MCP servers
+    // The SDK now handles MCP servers directly via options
+    agentConfig.mcpServers = allMcpServers;
 
     // Get user home directory for npm cache
     const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || "";
     const npmCacheDir = join(homeDir, "Library/Caches/deno/npm");
     
     // Create Deno permissions for the worker based on permission mode
-    // IMPORTANT: The 'run' permission allows Claude Code SDK to execute shell commands
-    // which can bypass the file system sandbox. For true isolation, use "strict" mode.
+    // IMPORTANT: The 'run' permission allows Claude Agent SDK to execute shell commands
+    // which can bypass the file system sandbox.
     let permissions: Deno.PermissionOptions;
-    
+
     switch (agentConfig.permissionMode) {
       case "bypassPermissions":
         // Full access - no sandbox
@@ -121,34 +124,12 @@ export class AgentManager {
           env: true,
           run: true,
           ffi: false,
-          hrtime: false,
         };
         break;
-        
-      case "strict":
-        // NOTE: "strict" mode is not possible with Claude Code SDK
-        // The SDK requires 'run' permission to spawn its Node process
-        // This fundamentally breaks isolation as shell commands can access any file
-        console.warn("⚠️  Warning: 'strict' mode not supported with Claude Code SDK");
-        console.warn("   The SDK requires 'run' permission which allows shell commands");
-        console.warn("   that can bypass file system isolation. Using restricted mode instead.");
-        
-        // Best we can do: limit to specific commands
-        permissions = {
-          read: [
-            agentConfig.workingDirectory,
-            npmCacheDir, // Allow reading npm modules
-          ],
-          write: [agentConfig.workingDirectory],
-          net: false,
-          env: true, // Needed for Claude Code SDK
-          run: ["node"], // Only allow Node (still a security risk)
-          ffi: false,
-          hrtime: false,
-        };
-        break;
-        
+
       case "default":
+      case "acceptEdits":
+      case "plan":
       default:
         // Default mode - balanced between functionality and security
         // WARNING: 'run: true' allows shell commands that can bypass the sandbox
@@ -158,18 +139,12 @@ export class AgentManager {
             npmCacheDir, // Allow reading npm modules
           ],
           write: [agentConfig.workingDirectory],
-          net: false,
-          env: true, // Needed for Claude Code SDK
-          run: true, // Allows shell commands (security risk)
+          net: allMcpServers.some(s => s.url) ? true : false,
+          env: true, // Needed for Claude Agent SDK
+          run: true, // Allows shell commands (needed for SDK)
           ffi: false,
-          hrtime: false,
         };
         break;
-    }
-
-    // Add network permissions if MCP servers are configured
-    if (allMcpServers.some(s => s.url)) {
-      permissions.net = true;
     }
 
     // Create the worker agent proxy
@@ -291,62 +266,9 @@ export class AgentManager {
   }
 
   /**
-   * Create .mcp.json in project root with MCP servers
+   * Note: MCP server configuration is now handled directly by the Claude Agent SDK
+   * via the mcpServers option. No need to create .mcp.json files anymore.
    */
-  private async createMcpConfigFile(
-    workingDirectory: string,
-    mcpServers: MCPServerConfig[],
-  ): Promise<void> {
-    const mcpConfig: any = {
-      mcpServers: {},
-    };
-
-    // Add MCP servers to config
-    for (const server of mcpServers) {
-      if (server.url) {
-        // HTTP/SSE servers - use "type": "http" format
-        mcpConfig.mcpServers[server.name] = {
-          type: "http",
-          url: server.url,
-          transport: server.transport || "http",
-        };
-      } else if (server.command) {
-        // stdio servers (local commands)
-        mcpConfig.mcpServers[server.name] = {
-          type: "stdio",
-          command: server.command,
-          args: server.args || [],
-          env: server.env || {},
-        };
-      }
-    }
-
-    // Write .mcp.json to agent's working directory (project root)
-    await Deno.writeTextFile(
-      join(workingDirectory, ".mcp.json"),
-      JSON.stringify(mcpConfig, null, 2),
-    );
-  }
-
-  /**
-   * Create .claude/settings.local.json for auto-approval of MCP servers
-   */
-  private async createClaudeSettings(
-    workingDirectory: string,
-  ): Promise<void> {
-    const claudeDir = join(workingDirectory, ".claude");
-    await ensureDir(claudeDir);
-    
-    const settings = {
-      "enableAllProjectMcpServers": true,
-      "theme": "light"
-    };
-    
-    await Deno.writeTextFile(
-      join(claudeDir, "settings.local.json"),
-      JSON.stringify(settings, null, 2),
-    );
-  }
 
   /**
    * Merge default MCP servers with agent-specific ones

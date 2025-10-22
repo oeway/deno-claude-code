@@ -1,16 +1,35 @@
 /**
  * Type definitions for Claude Code Agent
+ * Enhanced for the new @anthropic-ai/claude-agent-sdk
  */
 
 /**
- * Permission modes matching Claude CLI
+ * Permission modes matching Claude Agent SDK
  */
 export type PermissionMode =
-  | "default"         // Standard mode with shell access (security risk)
-  | "strict"          // No shell access, true file system isolation
+  | "default"         // Standard permission behavior
   | "acceptEdits"     // Auto-accept file edits
-  | "bypassPermissions" // Full system access, no sandbox
-  | "plan";           // Planning mode
+  | "bypassPermissions" // Bypass all permission checks
+  | "plan";           // Planning mode - no execution
+
+/**
+ * Setting sources for filesystem-based configuration
+ */
+export type SettingSource = 'user' | 'project' | 'local';
+
+/**
+ * Agent definition for programmatic subagents
+ */
+export interface AgentDefinition {
+  /** Natural language description of when to use this agent */
+  description: string;
+  /** Array of allowed tool names. If omitted, inherits all tools */
+  tools?: string[];
+  /** The agent's system prompt */
+  prompt: string;
+  /** Model override for this agent */
+  model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
+}
 
 /**
  * MCP Server configuration
@@ -46,10 +65,32 @@ export interface AgentConfig {
   permissionMode?: PermissionMode;
   /** List of allowed tools */
   allowedTools?: string[];
+  /** List of disallowed tools */
+  disallowedTools?: string[];
   /** MCP servers configuration */
   mcpServers?: MCPServerConfig[];
   /** Settings template for claude.json */
   settingsTemplate?: Record<string, any>;
+  /** Model to use (e.g., 'claude-sonnet-4-5-20250929') */
+  model?: string;
+  /** Fallback model if primary fails */
+  fallbackModel?: string;
+  /** Programmatically defined subagents */
+  agents?: Record<string, AgentDefinition>;
+  /** System prompt configuration */
+  systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
+  /** Control which filesystem settings to load */
+  settingSources?: SettingSource[];
+  /** Additional directories Claude can access */
+  additionalDirectories?: string[];
+  /** Maximum conversation turns */
+  maxTurns?: number;
+  /** Maximum tokens for thinking process */
+  maxThinkingTokens?: number;
+  /** Include partial message events */
+  includePartialMessages?: boolean;
+  /** Environment variables */
+  env?: Record<string, string>;
 }
 
 /**
@@ -115,10 +156,32 @@ export interface CreateAgentOptions {
   permissionMode?: PermissionMode;
   /** List of allowed tools */
   allowedTools?: string[];
+  /** List of disallowed tools */
+  disallowedTools?: string[];
   /** MCP servers configuration */
   mcpServers?: MCPServerConfig[];
   /** Settings template for claude.json */
   settingsTemplate?: Record<string, any>;
+  /** Model to use */
+  model?: string;
+  /** Fallback model if primary fails */
+  fallbackModel?: string;
+  /** Programmatically defined subagents */
+  agents?: Record<string, AgentDefinition>;
+  /** System prompt configuration */
+  systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
+  /** Control which filesystem settings to load */
+  settingSources?: SettingSource[];
+  /** Additional directories Claude can access */
+  additionalDirectories?: string[];
+  /** Maximum conversation turns */
+  maxTurns?: number;
+  /** Maximum tokens for thinking process */
+  maxThinkingTokens?: number;
+  /** Include partial message events */
+  includePartialMessages?: boolean;
+  /** Environment variables */
+  env?: Record<string, string>;
 }
 
 /**

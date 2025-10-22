@@ -1,24 +1,38 @@
-# Claude Code Deno Agent
+# Claude Agent SDK for Deno
 
-A secure Deno library for running Claude Code agents with proper sandboxing and streaming support.
+A powerful Deno library for running Claude agents with sandboxing, streaming support, and Hypha integration. Built on the new **Claude Agent SDK**.
+
+## ✨ Version 2.0 - Major Update
+
+This library has been upgraded to use the new **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`), which provides enhanced capabilities for building AI agents. See [MIGRATION.md](./MIGRATION.md) for migration details.
 
 ## Features
 
-- 🔒 **True Sandboxing**: Uses Deno's subprocess API for proper permission enforcement
-- 🔄 **Streaming Responses**: Real-time streaming of Claude's responses
+- 🔒 **Sandboxing**: Uses Deno's subprocess API for permission enforcement
+- 🔄 **Streaming Responses**: Real-time streaming of agent responses
 - 📁 **Isolated Execution**: Each agent runs in its own working directory
 - 🎯 **Session Management**: Multi-turn conversations with context preservation
 - 🛠️ **Tool Support**: Full support for Claude's tool capabilities
-- 🔐 **Permission Control**: Configurable permission modes for tool usage
+- 🔐 **Permission Control**: Configurable permission modes (default, acceptEdits, bypassPermissions, plan)
+- 🤖 **Programmatic Subagents**: Define specialized subagents for task delegation
+- 🎨 **Custom System Prompts**: Tailor agent behavior with custom or preset prompts
+- 📚 **Setting Sources Control**: Choose which filesystem settings to load
+- 🌐 **Hypha Integration**: Expose agents as distributed services
+- 🔌 **MCP Integration**: Connect to Model Context Protocol servers
+- 🎛️ **Model Selection**: Specify models and fallback options
 
 ## Installation
 
 ### Prerequisites
 
 1. Install [Deno](https://deno.land/)
-2. Install Claude CLI:
+2. Install Claude Agent SDK:
    ```bash
-   npm install -g @anthropic-ai/claude-code
+   npm install -g @anthropic-ai/claude-agent-sdk
+   ```
+3. Set up your Anthropic API key:
+   ```bash
+   export ANTHROPIC_API_KEY=your-key-here
    ```
 
 ### Import
@@ -55,6 +69,67 @@ for await (const response of manager.sendCommand(agent.id, "Hello!")) {
 await manager.removeAgent(agent.id);
 ```
 
+## New in v2.0: Advanced Features
+
+### Programmatic Subagents
+
+Define specialized subagents for task delegation:
+
+```typescript
+const agent = await manager.createAgent({
+  name: "MainAgent",
+  agents: {
+    "code-reviewer": {
+      description: "Expert code reviewer",
+      prompt: "You are an expert code reviewer. Focus on quality and best practices.",
+      tools: ["Read", "Grep", "Glob"],
+      model: "sonnet"
+    }
+  }
+});
+```
+
+### Custom System Prompts
+
+Tailor agent behavior with custom prompts or use Claude Code's preset:
+
+```typescript
+// Custom prompt
+const agent = await manager.createAgent({
+  systemPrompt: "You are a data analysis expert"
+});
+
+// Claude Code preset (for coding tasks)
+const codingAgent = await manager.createAgent({
+  systemPrompt: { type: "preset", preset: "claude_code" }
+});
+```
+
+### Setting Sources Control
+
+Control which filesystem settings to load:
+
+```typescript
+const agent = await manager.createAgent({
+  // Load project settings (CLAUDE.md, .claude/settings.json)
+  settingSources: ["project"],
+  // Required to interpret CLAUDE.md
+  systemPrompt: { type: "preset", preset: "claude_code" }
+});
+```
+
+### Model Selection
+
+Specify models and fallbacks:
+
+```typescript
+const agent = await manager.createAgent({
+  model: "claude-sonnet-4-5-20250929",
+  fallbackModel: "claude-sonnet-3-5-20241022",
+  maxThinkingTokens: 10000
+});
+```
+
 ## Examples
 
 ### Basic Usage
@@ -64,6 +139,19 @@ deno task example:basic
 ```
 
 See [`examples/basic.ts`](examples/basic.ts) for a simple example.
+
+### Advanced SDK Features
+
+```bash
+deno run --allow-all examples/advanced-sdk-features.ts
+```
+
+See [`examples/advanced-sdk-features.ts`](examples/advanced-sdk-features.ts) for comprehensive examples of:
+- Programmatic subagents
+- Custom system prompts
+- Setting sources control
+- Model selection
+- Enhanced tool control
 
 ### Streaming Responses
 

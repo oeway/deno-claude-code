@@ -65,8 +65,8 @@ async function basicExample() {
       "❌ Error:",
       error instanceof Error ? error.message : String(error),
     );
-    console.error("\nMake sure Claude Code SDK is available:");
-    console.error("  npm install @anthropic-ai/claude-code");
+    console.error("\nMake sure Claude Agent SDK is available:");
+    console.error("  npm install @anthropic-ai/claude-agent-sdk");
   }
 }
 

@@ -1,12 +1,13 @@
 {
-  "name": "@claude-code/deno-agent",
-  "version": "1.0.0",
+  "name": "@claude-agent-sdk/deno-agent",
+  "version": "2.0.0",
   "exports": "./src/mod.ts",
   "tasks": {
     "test": "deno test --allow-all tests/",
     "test:agent": "deno test --allow-all tests/agent_test.ts",
     "test:manager": "deno test --allow-all tests/manager_test.ts",
     "example:basic": "deno run --allow-all examples/basic.ts",
+    "example:advanced": "deno run --allow-all examples/advanced-sdk-features.ts",
     "example:streaming": "deno run --allow-all examples/streaming.ts",
     "example:sandboxed": "deno run --allow-net --allow-run --allow-env --allow-read=./sandbox-workspace,~/Library/Caches/deno --allow-write=./sandbox-workspace examples/sandboxed.ts",
     "example:mcp": "deno run --allow-all examples/mcp-server.ts",
