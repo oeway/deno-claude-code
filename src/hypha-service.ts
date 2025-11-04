@@ -383,13 +383,13 @@ export class HyphaAgentService {
   }
 
   /**
-   * Connect to Hypha server and register the service
+   * Connect to Hypha server and register the service with retry logic
    */
   async connect(): Promise<void> {
     // Initialize the manager
     await this.manager.initialize();
 
-    // Connect to Hypha server
+    // Connect to Hypha server with retry logic
     const connectConfig: any = {
       server_url: this.config.serverUrl,
     };
@@ -404,13 +404,15 @@ export class HyphaAgentService {
     else{
       connectConfig.token = await hyphaWebsocketClient.login({ server_url: this.config.serverUrl });
     }
-    console.log(`🔌 [CONNECT] Connecting to Hypha server...`);
+
+    console.log(`🔌 [CONNECT] Connecting to Hypha server at ${this.config.serverUrl}...`);
     this.server = await hyphaWebsocketClient.connectToServer(connectConfig);
     console.log(`✅ [CONNECT] Connected to Hypha server at ${this.config.serverUrl}`);
     console.log(`📁 [CONNECT] Workspace: ${this.server.config.workspace}`);
-    console.log(`🆔 [CONNECT] Client ID: ${this.server.config.client_id || 'N/A'}`);
+    console.log(`🆔 [CONNECT] Client ID: ${this.server.config.client_id || 'N/A'}`)
 
     // Register the service with all available methods
+    console.log(`📝 [REGISTER] Registering service...`);
     this.service = await this.server.registerService({
       name: "Claude Agent Manager Service",
       id: this.config.serviceId,
@@ -419,25 +421,25 @@ export class HyphaAgentService {
         require_context: false,
       },
       description: "Comprehensive agent management service for Claude Code",
-      
+
       // Agent lifecycle management
       createAgent: this.createAgent.bind(this),
       getAgent: this.getAgent.bind(this),
       getAllAgents: this.getAllAgents.bind(this),
       removeAgent: this.removeAgent.bind(this),
       removeAllAgents: this.removeAllAgents.bind(this),
-      
+
       // Agent execution
       execute: this.execute.bind(this),
       executeStreaming: this.executeStreaming.bind(this),
       stopAgent: this.stopAgent.bind(this),
-      
+
       // Permission handling
       respondToPermission: this.respondToPermission.bind(this),
-      
+
       // Manager information
       getInfo: this.getInfo.bind(this),
-      
+
       // Utility methods
       ping: this.ping.bind(this),
       help: this.help.bind(this),

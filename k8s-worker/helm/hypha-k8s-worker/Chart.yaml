@@ -1,0 +1,14 @@
+apiVersion: v2
+name: hypha-k8s-worker
+description: Hypha Kubernetes Worker for launching jobs in Kubernetes clusters
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - hypha
+  - kubernetes
+  - worker
+  - ai
+maintainers:
+  - name: Hypha Team
+    url: https://github.com/amun-ai/hypha

@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hypha-k8s-worker.fullname" . }}
+  labels:
+    {{- include "hypha-k8s-worker.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hypha-k8s-worker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "hypha-k8s-worker.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "hypha-k8s-worker.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: worker
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: HYPHA_SERVER_URL
+          value: {{ .Values.hypha.serverUrl | quote }}
+        - name: HYPHA_WORKSPACE
+          value: {{ .Values.hypha.workspace | quote }}
+        - name: HYPHA_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.hypha.existingSecret }}
+              key: {{ .Values.hypha.tokenKey }}
+        - name: HYPHA_SERVICE_ID
+          value: {{ .Values.hypha.serviceId | quote }}
+        - name: HYPHA_VISIBILITY
+          value: {{ .Values.hypha.visibility | quote }}
+        - name: HYPHA_K8S_NAMESPACE
+          value: {{ .Values.kubernetes.namespace | quote }}
+        - name: HYPHA_K8S_DEFAULT_TIMEOUT
+          value: {{ .Values.kubernetes.defaultTimeout | quote }}
+        - name: HYPHA_K8S_IMAGE_PULL_POLICY
+          value: {{ .Values.kubernetes.imagePullPolicy | quote }}
+        {{- with .Values.env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

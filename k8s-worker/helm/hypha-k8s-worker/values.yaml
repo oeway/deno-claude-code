@@ -1,0 +1,90 @@
+# Default values for hypha-k8s-worker
+
+replicaCount: 1
+
+image:
+  repository: oeway/hypha-k8s-worker
+  pullPolicy: Always
+  tag: "0.1.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# RBAC permissions for the worker
+rbac:
+  create: true
+  # Permissions needed to create/manage jobs and pods
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "pods/log"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["batch"]
+      resources: ["jobs"]
+      verbs: ["get", "list", "watch", "create", "delete"]
+    - apiGroups: [""]
+      resources: ["secrets"]
+      verbs: ["get"]
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Hypha connection settings
+hypha:
+  serverUrl: "https://hypha.aicell.io"
+  workspace: "hypha-agents"
+  # Token should be provided via existing secret
+  existingSecret: "claude-agent-workspace-token"
+  tokenKey: "HYPHA_WORKSPACE_TOKEN"
+  serviceId: "k8s-worker"
+  visibility: "protected"
+
+# Kubernetes worker settings
+kubernetes:
+  namespace: "hypha"  # Namespace where jobs/pods will be created
+  defaultTimeout: 3600
+  imagePullPolicy: "IfNotPresent"
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Additional environment variables
+env:
+  - name: HYPHA_LOGLEVEL
+    value: "INFO"
+  - name: PYTHONUNBUFFERED
+    value: "1"
