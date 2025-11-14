@@ -20,7 +20,7 @@ echo ""
 
 # Build the Docker image
 echo "📦 Building Docker image..."
-docker build -t "${FULL_IMAGE}" -t "${LATEST_IMAGE}" .
+docker build -t "${FULL_IMAGE}" -t "${LATEST_IMAGE}" --platform linux/amd64 .
 
 echo ""
 echo "✅ Build completed successfully!"

@@ -34,4 +34,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD deno eval "Deno.exit(0)"
 
 # Run the Hypha service
-CMD ["deno", "run", "--allow-all", "--unstable", "src/hypha-service.ts"]
+CMD ["deno", "run", "--allow-all", "--unstable-worker-options", "src/hypha-service.ts"]
