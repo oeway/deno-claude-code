@@ -41,14 +41,11 @@ echo "================================================"
 echo ""
 
 # Start the service with Deno
+# Note: --unstable-worker-options is required for Worker.deno.permissions API used by Claude Agent SDK
 deno run \
-    --allow-import \
-    --allow-net \
+    --allow-all \
     --unstable-worker-options \
-    --allow-read \
-    --allow-write \
-    --allow-env \
-    --allow-run \
+    --node-modules-dir \
     src/hypha-service.ts
 
 # Note: The service needs these permissions:

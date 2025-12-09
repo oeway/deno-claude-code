@@ -18,9 +18,15 @@ echo "Image: ${FULL_IMAGE}"
 echo "Latest: ${LATEST_IMAGE}"
 echo ""
 
-# Build the Docker image
-echo "📦 Building Docker image..."
-docker build -t "${FULL_IMAGE}" -t "${LATEST_IMAGE}" --platform linux/amd64 .
+# Build the Docker image for linux/amd64
+echo "📦 Building Docker image for linux/amd64..."
+echo "⚠️  Note: Building on ARM64 (Apple Silicon) for AMD64 target. This may take longer due to emulation."
+
+docker build \
+    --platform linux/amd64 \
+    -t "${FULL_IMAGE}" \
+    -t "${LATEST_IMAGE}" \
+    .
 
 echo ""
 echo "✅ Build completed successfully!"

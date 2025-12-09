@@ -1,6 +1,6 @@
 {
-  "name": "@claude-agent-sdk/deno-agent",
-  "version": "2.0.0",
+  "name": "hypha-claude-agent",
+  "version": "0.1.11",
   "exports": "./src/mod.ts",
   "tasks": {
     "start": "bash start-hypha-service.sh",
@@ -19,7 +19,7 @@
     "@std/fs": "https://deno.land/std@0.224.0/fs/mod.ts",
     "@std/path": "https://deno.land/std@0.224.0/path/mod.ts",
     "@std/streams": "https://deno.land/std@0.224.0/streams/mod.ts",
-    "@anthropic-ai/claude-agent-sdk": "npm:@anthropic-ai/claude-agent-sdk@0.1.25",
+    "@anthropic-ai/claude-agent-sdk": "npm:@anthropic-ai/claude-agent-sdk@0.1.61",
     "hypha-rpc": "npm:hypha-rpc@^0.20.38"
   }
 }

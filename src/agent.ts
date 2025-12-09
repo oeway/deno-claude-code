@@ -70,6 +70,19 @@ export class Agent {
       // Track allowed tools for this session - merge provided options with agent's allowed tools
       let sessionAllowedTools = [...(this.allowedTools || []), ...(options?.allowedTools || [])];
 
+      // Build environment variables for SDK subprocess
+      // Always include ANTHROPIC_API_KEY if available from environment
+      const sdkEnv: Record<string, string> = {};
+      const anthropicKey = (globalThis as any).Deno?.env.get("ANTHROPIC_API_KEY") ||
+                          (globalThis as any).process?.env?.ANTHROPIC_API_KEY;
+      if (anthropicKey) {
+        sdkEnv.ANTHROPIC_API_KEY = anthropicKey;
+      }
+      // Merge with config env
+      if (this.config.env) {
+        Object.assign(sdkEnv, this.config.env);
+      }
+
       // Build SDK options from agent config
       const sdkOptions: any = {
         abortController: this.abortController,
@@ -87,36 +100,48 @@ export class Agent {
         ...(this.config.maxTurns ? { maxTurns: this.config.maxTurns } : {}),
         ...(this.config.maxThinkingTokens ? { maxThinkingTokens: this.config.maxThinkingTokens } : {}),
         ...(this.config.includePartialMessages ? { includePartialMessages: this.config.includePartialMessages } : {}),
-        ...(this.config.env ? { env: this.config.env } : {}),
+        ...(Object.keys(sdkEnv).length > 0 ? { env: sdkEnv } : {}),
       };
 
-      // Convert MCP servers to SDK format if provided
-      if (this.config.mcpServers && this.config.mcpServers.length > 0) {
-        sdkOptions.mcpServers = {};
-        for (const server of this.config.mcpServers) {
-          if (server.url) {
-            // HTTP/SSE servers - determine type based on URL or transport
-            const serverType = server.transport === "http" || !server.transport ? "http" : "sse";
-            sdkOptions.mcpServers[server.name] = {
-              type: serverType,
-              url: server.url,
-            };
-          } else if (server.command) {
-            // stdio servers
-            sdkOptions.mcpServers[server.name] = {
-              type: "stdio",
-              command: server.command,
-              args: server.args || [],
-              env: server.env || {},
-            };
-          }
-        }
+      // MCP servers disabled for now - causes "ProcessTransport output stream not available" error
+      // See: https://github.com/anthropics/claude-agent-sdk-python/issues/386
+      // TODO: Re-enable once SDK fix is available
+      // if (this.config.mcpServers && this.config.mcpServers.length > 0) {
+      //   sdkOptions.mcpServers = {};
+      //   for (const server of this.config.mcpServers) {
+      //     if (server.url) {
+      //       const serverType = server.transport === "http" || !server.transport ? "http" : "sse";
+      //       sdkOptions.mcpServers[server.name] = {
+      //         type: serverType,
+      //         url: server.url,
+      //       };
+      //     } else if (server.command) {
+      //       sdkOptions.mcpServers[server.name] = {
+      //         type: "stdio",
+      //         command: server.command,
+      //         args: server.args || [],
+      //         env: server.env || {},
+      //       };
+      //     }
+      //   }
+      // }
+
+      // Convert string prompt to async generator to avoid ProcessTransport timing issues
+      // See: https://github.com/anthropics/claude-agent-sdk-python/issues/386
+      async function* wrapPrompt(text: string) {
+        yield {
+          type: "user" as const,
+          message: {
+            role: "user" as const,
+            content: text,
+          },
+        };
       }
 
       // Use the Claude Agent SDK query function
       for await (
         const sdkMessage of query({
-          prompt,
+          prompt: wrapPrompt(prompt),
           options: sdkOptions,
         })
       ) {

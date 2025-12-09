@@ -472,13 +472,12 @@ export class HyphaAgentService {
 
     const agent = await this.manager.createAgent(agentOptions);
     const info = await agent.getInfo();
-    
     console.log(`✅ [CREATE_AGENT] Agent created:`, {
       id: info.id,
       name: info.name,
       workingDirectory: info.workingDirectory,
     });
-    
+
     return info;
   }
 
@@ -560,8 +559,12 @@ export class HyphaAgentService {
       throw new Error(`Agent ${agentId} not found`);
     }
 
+    // Add a small delay to ensure agent process is fully initialized
+    // This helps prevent "ProcessTransport is not ready" errors
+    await new Promise(resolve => setTimeout(resolve, 200));
+
     const results: any[] = [];
-    
+
     // Simple permission callback that auto-denies (for non-interactive mode)
     const permissionCallback = async (request: PermissionRequest): Promise<PermissionResponse> => {
       return {
@@ -570,19 +573,24 @@ export class HyphaAgentService {
       };
     };
 
-    for await (const response of agent.execute(prompt, sessionId, permissionCallback, { allowedTools })) {
-      if (response.type === "agent" && response.data) {
-        // Add formatted display message to the result
-        const displayMessage = formatStreamMessage(response);
-        const dataWithDisplay = {
-          ...response.data,
-          display_message: displayMessage
-        };
-        results.push(dataWithDisplay);
-      } else if (response.type === "error") {
-        console.log(`❌ [EXECUTE] Error: ${response.error}`);
-        throw new Error(response.error);
+    try {
+      for await (const response of agent.execute(prompt, sessionId, permissionCallback, { allowedTools })) {
+        if (response.type === "agent" && response.data) {
+          // Add formatted display message to the result
+          const displayMessage = formatStreamMessage(response);
+          const dataWithDisplay = {
+            ...response.data,
+            display_message: displayMessage
+          };
+          results.push(dataWithDisplay);
+        } else if (response.type === "error") {
+          console.log(`❌ [EXECUTE] Error: ${response.error}`);
+          throw new Error(response.error);
+        }
       }
+    } catch (error) {
+      console.log(`❌ [EXECUTE] Exception: ${error}`);
+      throw error;
     }
 
     console.log(`✅ [EXECUTE] Completed with ${results.length} responses`);
@@ -649,9 +657,10 @@ export class HyphaAgentService {
       for await (const response of generator) {
         // Check if we have a pending permission update to yield first
         if (pendingPermissionUpdate) {
+          const update: StreamUpdate = pendingPermissionUpdate as StreamUpdate;
           // Add display_message to permission update
-          if (!pendingPermissionUpdate.display_message && pendingPermissionUpdate.permissionRequest) {
-            const req = pendingPermissionUpdate.permissionRequest;
+          if (update.type === "permission" && !update.display_message && update.permissionRequest) {
+            const req = update.permissionRequest;
             let msg = `🔐 Permission requested\n    Tool: ${req.toolName}`;
             if (req.patterns && req.patterns.length > 0) {
               msg += `\n    Patterns: ${req.patterns.join(", ")}`;
@@ -659,22 +668,22 @@ export class HyphaAgentService {
             if (req.description) {
               msg += `\n    Purpose: ${req.description}`;
             }
-            pendingPermissionUpdate.display_message = msg;
+            update.display_message = msg;
           }
-          
+
           // Log the formatted permission message
-          if (pendingPermissionUpdate.display_message) {
-            const lines = pendingPermissionUpdate.display_message.split('\n');
+          if (update.display_message) {
+            const lines = update.display_message.split('\n');
             if (lines.length > 1) {
               console.log(`[EXECUTE_STREAMING] ${lines[0]}`);
               for (let i = 1; i < lines.length; i++) {
                 console.log(`                    ${lines[i]}`);
               }
             } else {
-              console.log(`[EXECUTE_STREAMING] ${pendingPermissionUpdate.display_message}`);
+              console.log(`[EXECUTE_STREAMING] ${update.display_message}`);
             }
           }
-          yield pendingPermissionUpdate;
+          yield update;
           pendingPermissionUpdate = null;
           
           // Wait for permission response before continuing
